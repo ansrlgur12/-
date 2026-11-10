@@ -1,0 +1,22 @@
+{
+  "name": "jikjwau",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev:client": "npm run start -w client",
+    "dev:server": "npm run dev -w server",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  },
+  "overrides": {
+    "react": "19.3.0"
+  }
+}

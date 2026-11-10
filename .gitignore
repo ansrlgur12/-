@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+
+# Capacitor native projects build output
+client/android/app/build/
+client/ios/App/Pods/
+
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
