@@ -1,15 +1,8 @@
-import type { LatLng, Vec2 } from '@jikjwau/shared/types'
+import type { Vec2 } from '@jikjwau/shared/types'
 
-const EARTH_RADIUS_M = 6_371_008.8
+export { project } from '@jikjwau/shared/geo'
+
 const DEG = Math.PI / 180
-
-/** 위경도를 origin 기준 로컬 평면 좌표(미터)로 바꾼다. 동네 반경 정도에서는 오차가 무시할 만하다. */
-export function project(point: LatLng, origin: LatLng): Vec2 {
-  return {
-    x: (point.lng - origin.lng) * DEG * EARTH_RADIUS_M * Math.cos(origin.lat * DEG),
-    y: (point.lat - origin.lat) * DEG * EARTH_RADIUS_M,
-  }
-}
 
 export function distance(a: Vec2, b: Vec2): number {
   return Math.hypot(b.x - a.x, b.y - a.y)

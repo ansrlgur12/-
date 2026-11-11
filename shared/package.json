@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     "./types": "./types/index.ts",
-    "./config": "./config/index.ts"
+    "./config": "./config/index.ts",
+    "./geo": "./geo/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."

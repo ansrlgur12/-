@@ -12,18 +12,26 @@ function resolveBaseUrl(): string {
 
 export const API_BASE_URL = resolveBaseUrl()
 
-export async function postJson<T>(path: string, body: unknown): Promise<T> {
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response
   try {
-    res = await fetch(`${API_BASE_URL}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
+    res = await fetch(`${API_BASE_URL}${path}`, init)
   } catch {
     throw new Error(`서버에 연결할 수 없습니다 (${API_BASE_URL})`)
   }
   const json = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
   return json as T
+}
+
+export function getJson<T>(path: string): Promise<T> {
+  return request<T>(path)
+}
+
+export function postJson<T>(path: string, body: unknown): Promise<T> {
+  return request<T>(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
 }

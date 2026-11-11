@@ -2,6 +2,9 @@ import { useLayoutEffect, useMemo, useRef } from 'react'
 import { Matrix4, type InstancedMesh } from 'three'
 import type { NodeId, Vec2 } from '@jikjwau/shared/types'
 
+/** 원판 중심 높이. 도로(0.01~0.03)보다 위 */
+const DOT_HEIGHT = 0.15
+
 interface Props {
   positions: Map<NodeId, Vec2>
   segments: Array<[NodeId, NodeId, string]>
@@ -24,7 +27,7 @@ export function IntersectionDots({ positions, segments }: Props) {
     const mesh = ref.current
     if (!mesh) return
     const m = new Matrix4()
-    points.forEach((p, i) => mesh.setMatrixAt(i, m.makeTranslation(p.x, 0.05, -p.y)))
+    points.forEach((p, i) => mesh.setMatrixAt(i, m.makeTranslation(p.x, DOT_HEIGHT, -p.y)))
     mesh.instanceMatrix.needsUpdate = true
   }, [points])
 
@@ -33,7 +36,8 @@ export function IntersectionDots({ positions, segments }: Props) {
   return (
     <instancedMesh key={points.length} ref={ref} args={[undefined, undefined, points.length]}>
       <cylinderGeometry args={[1.6, 1.6, 0.1, 12]} />
-      <meshLambertMaterial color="#f59e0b" />
+      {/* 도로(-4)·지나온 길(-6)보다 앞에 그려지게 */}
+      <meshLambertMaterial color="#f59e0b" polygonOffset polygonOffsetFactor={-8} polygonOffsetUnits={-8} />
     </instancedMesh>
   )
 }

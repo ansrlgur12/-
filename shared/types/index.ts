@@ -1,2 +1,5 @@
 export * from './game'
 export * from './road'
+export * from './map'
+export * from './play'
+export * from './place'

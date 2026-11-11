@@ -63,6 +63,37 @@ describe('classifyTurns', () => {
     ])
   })
 
+  it('같은 분류에 길이 둘이고 옆 칸이 비었으면 둘 다 남긴다 (갈림길)', () => {
+    const rights = classifyTurns([
+      { via: 1, angleDeg: 73 },
+      { via: 2, angleDeg: 49 },
+    ])
+    expect(rights.map((o) => [o.direction, o.via])).toEqual([
+      ['straight', 2],
+      ['right', 1],
+    ])
+    const lefts = classifyTurns([
+      { via: 1, angleDeg: -53 },
+      { via: 2, angleDeg: -137 },
+    ])
+    expect(lefts.map((o) => [o.direction, o.via])).toEqual([
+      ['left', 2],
+      ['straight', 1],
+    ])
+  })
+
+  it('왼쪽 길을 우회전으로 보내지는 않는다', () => {
+    const options = classifyTurns([
+      { via: 1, angleDeg: -100 },
+      { via: 2, angleDeg: -60 },
+      { via: 3, angleDeg: -40 },
+    ])
+    expect(options.map((o) => [o.direction, o.via])).toEqual([
+      ['left', 1],
+      ['straight', 3],
+    ])
+  })
+
   it('거의 되돌아가는 길은 제외한다', () => {
     const options = classifyTurns([
       { via: 1, angleDeg: -165 },
