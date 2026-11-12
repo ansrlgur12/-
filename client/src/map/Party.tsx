@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber/native'
-import type { Group, Vector3 } from 'three'
-import type { Point, Seat } from '@jikjwau/shared/types'
-import { MOVE_SPEED_MPS, SEAT_DIRECTION } from '@jikjwau/shared/config'
+import { Vector3, type Group } from 'three'
+import type { Outfit, Point, Seat } from '@jikjwau/shared/types'
+import { EMOTE_SHOW_MS, MOVE_SPEED_MPS, SEAT_DIRECTION } from '@jikjwau/shared/config'
+import { activeEmotes, emoteAnchors } from '../store/social'
 import { DIRECTION_COLOR } from './ChoiceArrows'
-import { Person, type PersonHandle } from './Person'
+import { PERSON_HEIGHT, Person, type PersonHandle } from './Person'
 import type { CameraRig } from './cameraRig'
+import { heightAt } from './terrain'
 
 interface Props {
   /** 서 있는 곳 */
@@ -17,6 +19,11 @@ interface Props {
   positionOut: Vector3
   mySeat?: Seat
   rig: CameraRig
+  outfits: Record<Seat, Outfit>
+  /** 다른 방 일행 (반투명) */
+  ghost?: boolean
+  /** 이모티콘을 찾고 말풍선 위치를 남길 캐릭터 key */
+  emoteKey: (seat: Seat) => string
 }
 
 /** 맡은 방향대로 선다: A(좌) 왼쪽, B(직) 가운데 앞, C(우) 오른쪽. 일행 기준 [오른쪽, 앞] m */
@@ -28,9 +35,19 @@ const STEP_PHASE_PER_M = 0.9
 const SCALE_PER_DISTANCE = 1 / 220
 
 /** 일행 3명. 실제 도로를 따라 걷고, 가는 방향을 바라본다 */
-export function Party({ position, route, onArrive, positionOut, mySeat, rig }: Props) {
+export function Party({ position, route, onArrive, positionOut, mySeat, rig, outfits, ghost, emoteKey }: Props) {
   const ref = useRef<Group>(null)
   const people = useRef<Record<Seat, PersonHandle | null>>({ A: null, B: null, C: null })
+  const spots = useRef<Record<Seat, Group | null>>({ A: null, B: null, C: null })
+  const keys = useMemo(() => Object.fromEntries(SEATS.map((s) => [s, emoteKey(s)])) as Record<Seat, string>, [emoteKey])
+
+  // 말풍선 위치는 이 일행이 있는 동안만
+  useEffect(() => {
+    for (const seat of SEATS) emoteAnchors.set(keys[seat], new Vector3(0, -1e6, 0))
+    return () => {
+      for (const seat of SEATS) emoteAnchors.delete(keys[seat])
+    }
+  }, [keys])
   const traveled = useRef(0)
   const arrived = useRef(false)
   const heading = useRef(0)
@@ -49,7 +66,7 @@ export function Party({ position, route, onArrive, positionOut, mySeat, rig }: P
   useEffect(() => {
     traveled.current = 0
     arrived.current = false
-    if (!track) positionOut.set(position[0], 0, -position[1])
+    if (!track) positionOut.set(position[0], heightAt(position[0], position[1]), -position[1])
   }, [track, position, positionOut])
 
   useFrame((_, delta) => {
@@ -63,7 +80,9 @@ export function Party({ position, route, onArrive, positionOut, mySeat, rig }: P
       const b = track.points[Math.min(i, track.points.length - 1)]
       const segLen = track.lengths[i] - track.lengths[i - 1]
       const t = segLen > 0 ? (d - track.lengths[i - 1]) / segLen : 1
-      positionOut.set(a[0] + (b[0] - a[0]) * t, 0, -(a[1] + (b[1] - a[1]) * t))
+      const x = a[0] + (b[0] - a[0]) * t
+      const y = a[1] + (b[1] - a[1]) * t
+      positionOut.set(x, heightAt(x, y), -y)
       // 지금 걷는 구간 방향을 바라본다 (월드 -z가 북쪽)
       if (segLen > 0) heading.current = Math.atan2(-(b[0] - a[0]), b[1] - a[1])
       phase.current += MOVE_SPEED_MPS * delta * STEP_PHASE_PER_M
@@ -77,6 +96,8 @@ export function Party({ position, route, onArrive, positionOut, mySeat, rig }: P
     walk.current += ((moving ? 1 : 0) - walk.current) * Math.min(1, delta * 8)
     if (!moving) phase.current += delta * 2 * walk.current
 
+    // 서 있을 때도 땅 높이를 다시 본다 (지형이 늦게 도착할 수 있다)
+    if (!moving) positionOut.y = heightAt(positionOut.x, -positionOut.z)
     const group = ref.current
     if (group) {
       group.position.copy(positionOut)
@@ -87,7 +108,18 @@ export function Party({ position, route, onArrive, positionOut, mySeat, rig }: P
       const k = Math.max(1, rig.distance * SCALE_PER_DISTANCE)
       group.scale.setScalar(k)
     }
-    for (const seat of SEATS) people.current[seat]?.pose(phase.current + (seat === 'B' ? Math.PI / 2 : 0), walk.current)
+    const now = Date.now()
+    for (const seat of SEATS) {
+      const e = activeEmotes.get(keys[seat])
+      const act = e && now - e.at < EMOTE_SHOW_MS ? { emote: e.emote, t: (now - e.at) / 1000 } : undefined
+      people.current[seat]?.pose(phase.current + (seat === 'B' ? Math.PI / 2 : 0), walk.current, act)
+      const spot = spots.current[seat]
+      const anchor = emoteAnchors.get(keys[seat])
+      if (spot && anchor) {
+        spot.getWorldPosition(anchor)
+        anchor.y += PERSON_HEIGHT * (group?.scale.y ?? 1)
+      }
+    }
   })
 
   return (
@@ -95,13 +127,21 @@ export function Party({ position, route, onArrive, positionOut, mySeat, rig }: P
       {SEATS.map((seat) => {
         const [right, forward] = FORMATION[seat]
         return (
-          <group key={seat} position={[right, 0, -forward]}>
+          <group
+            key={seat}
+            position={[right, 0, -forward]}
+            ref={(g) => {
+              spots.current[seat] = g
+            }}
+          >
             <Person
               ref={(h) => {
                 people.current[seat] = h
               }}
-              color={DIRECTION_COLOR[SEAT_DIRECTION[seat]]}
+              outfit={outfits[seat]}
+              ring={DIRECTION_COLOR[SEAT_DIRECTION[seat]]}
               mine={seat === mySeat}
+              ghost={ghost}
             />
           </group>
         )

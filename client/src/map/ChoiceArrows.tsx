@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { Quaternion, Vector3 } from 'three'
 import type { Direction, Point } from '@jikjwau/shared/types'
+import { heightAt } from './terrain'
 
 export const DIRECTION_COLOR: Record<Direction, string> = {
   left: '#3b82f6',
@@ -22,7 +23,8 @@ export function ChoiceArrows({ here, options }: Props) {
     () =>
       options.map((o) => {
         const dir = new Vector3(o.toward[0] - here[0], 0, -(o.toward[1] - here[1])).normalize()
-        const position = new Vector3(here[0], 2, -here[1]).addScaledVector(dir, ARROW_DISTANCE_M)
+        const position = new Vector3(here[0], 0, -here[1]).addScaledVector(dir, ARROW_DISTANCE_M)
+        position.y = heightAt(position.x, -position.z) + 2
         const quaternion = new Quaternion().setFromUnitVectors(UP, dir)
         return { key: o.direction, position, quaternion, color: DIRECTION_COLOR[o.direction] }
       }),

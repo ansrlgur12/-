@@ -115,10 +115,12 @@ function largestComponent(adj: Map<NodeId, Set<NodeId>>): Set<NodeId> {
   return best
 }
 
-export function nearestNode(graph: RoadGraph, point: Vec2): NodeId {
+/** allow를 주면 그 노드들 중에서만 고른다 */
+export function nearestNode(graph: RoadGraph, point: Vec2, allow?: (id: NodeId) => boolean): NodeId {
   let best: NodeId | undefined
   let bestDist = Infinity
   for (const [id, p] of graph.nodes) {
+    if (allow && !allow(id)) continue
     const d = distance(p, point)
     if (d < bestDist) {
       bestDist = d

@@ -1,4 +1,4 @@
-import type { Direction, Hand, LatLng, Seat } from './game'
+import type { Direction, Hand, LatLng, Seat, SeatController } from './game'
 
 /** 게임 origin(출발지) 기준 미터 [x 동쪽, y 북쪽] */
 export type Point = [number, number]
@@ -30,6 +30,8 @@ export interface RpsPrompt {
   rematch: boolean
   /** 이번 판 참가자가 이기면 갈 방향 (toward = 그 길로 처음 지나는 지점) */
   options: Array<{ seat: Seat; direction: Direction; toward: Point }>
+  /** 이미 낸 자리 (무엇을 냈는지는 판정 전까지 알려 주지 않는다) */
+  submitted: Seat[]
   /** 응답을 받은 때부터 마감까지. 앞선 이벤트 연출 시간이 포함되어 있다 */
   timeLeftMs: number
 }
@@ -44,36 +46,33 @@ export interface GameStats {
 }
 
 export interface GameSnapshot {
-  phase: 'RPS' | 'RPS_REMATCH' | 'ARRIVED'
+  /** ENDED: 일반 모드의 제한(시간·횟수)을 다 써서 끝남 */
+  phase: 'RPS' | 'RPS_REMATCH' | 'ARRIVED' | 'ENDED'
   position: Point
   stats: GameStats
-  /** 내가 낼 차례일 때만 있다 */
+  /** 자리마다 사람/AI. 시간 안에 안 내면 AI로 바뀐다 */
+  controllers: Record<Seat, SeatController>
+  /** 다음 판부터 사람이 이어받을 자리 */
+  returning: Seat[]
+  /** 사람이 아무도 없어서 멈춘 상태 (누가 돌아오면 이어진다) */
+  paused: boolean
+  /** 가위바위보 중일 때 */
   rps: RpsPrompt | null
 }
 
-export interface CreateGameRequest {
-  start: LatLng
-  destination: LatLng
-  seat: Seat
-}
-
-export interface CreateGameResponse {
-  gameId: string
+/** 게임 시작(또는 진행 중에 들어왔을 때) 한 번 받는 정보 */
+export interface GameIntro {
   origin: LatLng
-  seat: Seat
   /** 가장 가까운 길 위로 옮긴 목적지와 도착 반경 */
   destination: { point: Point; radiusM: number }
-  start: Point
-  events: GameEvent[]
-  snapshot: GameSnapshot
+  /** 지나온 길 (시작할 때는 출발 지점 하나) */
+  trail: Point[]
+  /** 서버 시작 시각부터 지난 시간 (이 기기 시계로 옮겨 쓴다) */
+  elapsedMs: number
 }
 
-export interface RpsChooseRequest {
-  /** null = 시간 초과 (AI가 대신 낸다) */
-  hand: Hand | null
-}
-
-export interface GameUpdateResponse {
+export interface GameUpdate {
+  /** 비어 있으면 상태(누가 냈는지, 자리 주인 등)만 바뀐 것 */
   events: GameEvent[]
   snapshot: GameSnapshot
 }

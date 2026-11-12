@@ -18,7 +18,7 @@ export function PinTooltip({ picker, hidden }: { picker: ScenePicker; hidden: bo
     let frame = 0
     const tick = () => {
       const pin = picker.pin
-      const top = pin && toScreen(picker, pin.x, pin.height, pin.z)
+      const top = pin && toScreen(picker, pin.x, pin.y + pin.height, pin.z)
       if (top) {
         pos.setValue({ x: top.x - WIDTH / 2, y: top.y - GAP })
         opacity.setValue(hidden ? 0 : 1)

@@ -2,9 +2,10 @@ import { createServer } from 'node:http'
 import express from 'express'
 import cors from 'cors'
 import { attachSocket } from './socket'
-import { gameRouter } from './features/game/game.routes'
 import { mapRouter } from './features/map/map.routes'
 import { placeRouter } from './features/place/place.routes'
+import { recordRouter } from './features/record/record.routes'
+import { profileRouter } from './features/profile/profile.routes'
 import { errorHandler } from './common/error-handler'
 
 const PORT = Number(process.env.PORT ?? 4000)
@@ -18,9 +19,10 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true })
 })
 
-app.use('/game', gameRouter)
 app.use('/map', mapRouter)
 app.use('/places', placeRouter)
+app.use('/records', recordRouter)
+app.use('/profile', profileRouter)
 app.use(errorHandler)
 
 const httpServer = createServer(app)

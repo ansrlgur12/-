@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { gunzipSync } from 'node:zlib'
-import type { RoadTile } from '@jikjwau/shared/types'
+import type { LatLng, MapRegion, RoadTile } from '@jikjwau/shared/types'
 import { parseTileKey } from '@jikjwau/shared/geo'
 import { HttpError } from '../../common/http-error'
 
@@ -26,6 +26,34 @@ async function refreshTilesDir(): Promise<string | null> {
   }
   return tilesDir
 }
+
+/** 대한민국 영역 (타일 폴더의 region.json). 예전에 만든 타일이라 없으면 null = 어디든 허용 */
+let region: { dir: string; data: MapRegion; rows: Map<number, number[]> } | null = null
+
+export async function getRegion(): Promise<MapRegion | null> {
+  const dir = tilesDir ?? (await refreshTilesDir())
+  if (!dir) return null
+  if (region?.dir !== dir) {
+    try {
+      const data = JSON.parse(await readFile(path.join(dir, 'region.json'), 'utf8')) as MapRegion
+      region = { dir, data, rows: new Map(data.rows.map(([row, ...runs]) => [row, runs])) }
+    } catch {
+      return null
+    }
+  }
+  return region.data
+}
+
+/** 타일(0.01도 칸)이 대한민국 영역인지. 영역 정보가 없으면 true */
+export async function inRegion(row: number, col: number): Promise<boolean> {
+  if (!(await getRegion())) return true
+  const runs = region!.rows.get(row)
+  if (!runs) return false
+  for (let i = 0; i < runs.length; i += 2) if (col >= runs[i] && col <= runs[i + 1]) return true
+  return false
+}
+
+export const latLngInRegion = (p: LatLng) => inRegion(Math.floor(p.lat * 100), Math.floor(p.lng * 100))
 
 export type TileLayer = 'roads' | 'scenery'
 

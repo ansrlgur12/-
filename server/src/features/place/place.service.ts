@@ -1,22 +1,30 @@
 import type { LatLng, PlaceResult, PlaceSearchResponse } from '@jikjwau/shared/types'
 import { HttpError } from '../../common/http-error'
 import { distance, project } from '../road/geo'
+import { latLngInRegion } from '../map/tile-store'
 
 const KAKAO_URL = 'https://dapi.kakao.com/v2/local/search/keyword.json'
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
-const USER_AGENT = 'jikjwau-dev/0.1 (game prototype)'
+export const USER_AGENT = 'jikjwau-dev/0.1 (game prototype)'
 const LIMIT = 10
 
 /** Nominatim 이용 정책: 초당 1건 이하 */
 const NOMINATIM_INTERVAL_MS = 1100
 let lastNominatimAt = 0
 
+/** Nominatim 호출 간격을 지킨다 (검색·위치 이름 찾기가 함께 쓴다) */
+export async function waitNominatim() {
+  const wait = lastNominatimAt + NOMINATIM_INTERVAL_MS - Date.now()
+  lastNominatimAt = Math.max(Date.now(), lastNominatimAt + NOMINATIM_INTERVAL_MS)
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait))
+}
+
 function withDistance(places: PlaceResult[], near?: LatLng): PlaceResult[] {
   if (!near) return places
   return places.map((p) => ({ ...p, distanceM: Math.round(distance({ x: 0, y: 0 }, project(p, near))) }))
 }
 
-async function fetchJson(url: string, headers: Record<string, string>) {
+export async function fetchJson(url: string, headers: Record<string, string>) {
   let res: Response
   try {
     res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) })
@@ -58,10 +66,7 @@ interface NominatimItem {
 }
 
 async function searchNominatim(query: string, near?: LatLng): Promise<PlaceResult[]> {
-  const wait = lastNominatimAt + NOMINATIM_INTERVAL_MS - Date.now()
-  if (wait > 0) await new Promise((r) => setTimeout(r, wait))
-  lastNominatimAt = Date.now()
-
+  await waitNominatim()
   const params = new URLSearchParams({ q: query, format: 'jsonv2', limit: String(LIMIT), countrycodes: 'kr', 'accept-language': 'ko' })
   // 기준점 주변 ±0.2도를 우선한다 (밖도 나온다)
   if (near) params.set('viewbox', [near.lng - 0.2, near.lat + 0.2, near.lng + 0.2, near.lat - 0.2].join(','))
@@ -78,9 +83,15 @@ async function searchNominatim(query: string, near?: LatLng): Promise<PlaceResul
   })
 }
 
+/** 대한민국 영역 밖 결과는 뺀다 (갈 수도 볼 수도 없는 곳) */
+async function inKorea(places: PlaceResult[]) {
+  const keep = await Promise.all(places.map((p) => latLngInRegion(p)))
+  return places.filter((_, i) => keep[i])
+}
+
 /** 카카오 키(KAKAO_REST_API_KEY)가 있으면 카카오, 없으면 OSM Nominatim으로 찾는다 */
 export async function searchPlaces(query: string, near?: LatLng): Promise<PlaceSearchResponse> {
   const key = process.env.KAKAO_REST_API_KEY
-  if (key) return { source: 'kakao', places: withDistance(await searchKakao(query, key, near), near) }
-  return { source: 'osm', places: withDistance(await searchNominatim(query, near), near) }
+  if (key) return { source: 'kakao', places: withDistance(await inKorea(await searchKakao(query, key, near)), near) }
+  return { source: 'osm', places: withDistance(await inKorea(await searchNominatim(query, near)), near) }
 }

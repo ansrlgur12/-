@@ -1,44 +1,73 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { StatusBar } from 'expo-status-bar'
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
-import type { LatLng, PlaceResult } from '@jikjwau/shared/types'
+import type { LatLng } from '@jikjwau/shared/types'
 import { project, unproject } from '@jikjwau/shared/geo'
 import { RoadScene } from './map/RoadScene'
 import { CameraGestures } from './map/CameraGestures'
-import { createCameraRig } from './map/cameraRig'
+import { CAMERA_LIMITS, createCameraRig } from './map/cameraRig'
 import { createScenePicker, hitsPin, pickGround } from './map/scenePicker'
 import type { DragHandlers } from './map/CameraGestures'
 import { useGame, type Spot } from './store/game'
 import { SetupPanel } from './ui/SetupPanel'
 import { GamePanel } from './ui/GamePanel'
-import { SearchBar } from './ui/SearchBar'
+import { LobbyPanel } from './ui/LobbyPanel'
+import { PlaceSheet } from './ui/PlaceSheet'
 import { PickCard } from './ui/PickCard'
 import { PinTooltip } from './ui/PinTooltip'
+import { LoadingScreen } from './ui/LoadingScreen'
+import { MainMenu } from './ui/MainMenu'
+import { RecordsScreen } from './ui/RecordsScreen'
+import { ClosetScreen } from './ui/ClosetScreen'
+import { EmoteBar } from './ui/EmoteBar'
+import { EmoteBubbles } from './ui/EmoteBubbles'
+import { RoundOverlay } from './ui/RoundOverlay'
+import { GameMenu } from './ui/GameMenu'
+import { ArrivalCelebration } from './ui/ArrivalCelebration'
+import { setBgm } from './lib/sound'
+import { isDarkSky, kstHour, skyAt } from './map/daylight'
 
-/** 검색한 장소로 옮겨 갈 때의 카메라 거리 */
-const SEARCH_VIEW_DISTANCE_M = 350
+/** 출발지를 정했을 때 카메라 거리 */
+const START_VIEW_DISTANCE_M = 350
+const GAME_CAMERA = { distance: 160, pitch: 0.95 }
 
 export default function App() {
   const [rig] = useState(createCameraRig)
   const [picker] = useState(createScenePicker)
   const status = useGame((s) => s.status)
+  const screen = useGame((s) => s.screen)
+  const [booted, setBooted] = useState(false)
+  const inGame = booted && screen === 'game'
+  const playing = inGame && (status === 'playing' || status === 'ended')
   const picked = useGame((s) => s.picked)
-  const inSetup = status === 'setup' || status === 'starting'
   const [draggingPin, setDraggingPin] = useState(false)
   /** 핀을 잡은 곳과 핀이 꽂힌 곳의 차이 (잡은 채로 옮겨도 핀이 손가락 아래로 튀지 않게) */
   const grabOffset = useRef({ x: 0, y: 0 })
 
-  // 처음 열면 기본 출발지 지도를 띄운다
-  useEffect(() => {
-    const { start, setStart } = useGame.getState()
-    setStart(start)
+  // 로딩 화면이 init(저장된 신원, 서버 연결, 하던 방으로 돌아가기)을 마치면 메뉴로
+  const onBooted = useCallback(() => {
+    if (useGame.getState().screen === 'loading') useGame.getState().setScreen('menu')
+    setBooted(true)
   }, [])
 
-  // 게임을 시작하면 일행을 따라간다
+  // BGM은 메뉴·기록실에서만
   useEffect(() => {
-    if (status === 'starting') rig.following = true
+    setBgm(booted && screen !== 'game' && screen !== 'loading')
+  }, [booted, screen])
+
+  // 게임에 들어갈 때마다 일행 가까이에서 시작한다
+  useEffect(() => {
+    if (screen !== 'game') return
+    rig.distance = GAME_CAMERA.distance
+    rig.pitch = GAME_CAMERA.pitch
+    rig.following = true
+  }, [screen, rig])
+
+  // 게임을 시작하면(또는 대기실에 들어가면) 일행·출발지를 따라간다
+  useEffect(() => {
+    if (status === 'playing' || status === 'lobby') rig.following = true
   }, [status, rig])
 
   // 화면 중심(카메라가 바라보는 곳)의 위경도. 월드 (x, z) → 로컬 (x, -z)
@@ -58,14 +87,20 @@ export default function App() {
   const pickAt = (x: number, y: number) => {
     const p = pickGround(picker, x, y)
     if (!p) return
-    useGame.getState().setPicked({ latLng: unproject(p, useGame.getState().start.latLng), name: '지도에서 고른 위치' })
+    useGame.getState().pickPoint(unproject(p, useGame.getState().start.latLng))
   }
 
-  const pickPlace = (place: PlaceResult) => {
-    const spot: Spot = { latLng: { lat: place.lat, lng: place.lng }, name: place.name, address: place.address }
-    useGame.getState().setPicked(spot)
-    lookAt(spot.latLng)
-    rig.distance = Math.min(rig.distance, SEARCH_VIEW_DISTANCE_M)
+  // 고르는 창에서 정하면: 출발지는 그 주변을, 목적지는 출발지와 함께 보이게
+  const onPlaceChosen = (kind: 'start' | 'destination', spot: Spot) => {
+    if (kind === 'start') {
+      rig.following = true
+      rig.distance = START_VIEW_DISTANCE_M
+      return
+    }
+    const p = project(spot.latLng, useGame.getState().start.latLng)
+    rig.following = false
+    rig.focus.set(p.x / 2, 0, -p.y / 2)
+    rig.distance = Math.min(Math.max(Math.hypot(p.x, p.y) * 1.3, START_VIEW_DISTANCE_M), CAMERA_LIMITS.distance.max)
   }
 
   // 핀을 잡고 끌면 손가락 아래 땅으로 핀을 옮긴다
@@ -85,9 +120,14 @@ export default function App() {
       if (!ground) return
       const { start, setPicked } = useGame.getState()
       const p = { x: ground.x + grabOffset.current.x, y: ground.y + grabOffset.current.y }
-      setPicked({ latLng: unproject(p, start.latLng), name: '지도에서 고른 위치' })
+      // 끄는 동안에는 위치만 옮기고, 놓으면 이름을 찾는다
+      setPicked({ latLng: unproject(p, start.latLng), name: '근처 장소 이름을 찾는 중…', resolving: true })
     },
-    end: () => setDraggingPin(false),
+    end: () => {
+      setDraggingPin(false)
+      const { picked, pickPoint } = useGame.getState()
+      if (picked) pickPoint(picked.latLng)
+    },
   }
 
   // 출발지가 바뀌면 지도 좌표의 기준점도 바뀐다. 보고 있던 곳이 그대로 보이게 카메라 중심을 옮긴다
@@ -101,40 +141,58 @@ export default function App() {
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
         <SafeAreaView style={styles.root} edges={['top', 'bottom', 'left', 'right']}>
-          <View style={styles.sceneWrap}>
-            <RoadScene rig={rig} picker={picker} />
-            <CameraGestures rig={rig} onLongPress={status === 'setup' ? pickAt : undefined} drag={status === 'setup' ? pinDrag : undefined} />
-            {status === 'setup' && picked && <PinTooltip picker={picker} hidden={draggingPin} />}
+          {/* 지도 + 아래 패널. 결과 창·꽃종이는 둘 다 덮는다 */}
+          <View style={styles.gameArea}>
+            <View style={styles.sceneWrap}>
+              {/* 3D 지도는 게임 화면에서만 그린다. 메뉴·기록실·옷장에서는 멈춰 두고 그 화면이 덮는다 */}
+              <RoadScene rig={rig} picker={picker} active={inGame} />
+              {inGame && (
+                <CameraGestures rig={rig} onLongPress={status === 'setup' ? pickAt : undefined} drag={status === 'setup' ? pinDrag : undefined} />
+              )}
+              {inGame && status === 'setup' && picked && <PinTooltip picker={picker} hidden={draggingPin} />}
 
-            {status === 'setup' && <SearchBar near={focusLatLng} onSelect={pickPlace} />}
-            {status === 'setup' && picked && (
-              <PickCard
-                spot={picked}
-                onStart={() => chooseStart(picked)}
-                onDestination={() => useGame.getState().setDestination(picked)}
-                onClose={() => useGame.getState().setPicked(null)}
-              />
-            )}
+              {inGame && status === 'setup' && <PlaceSheet near={focusLatLng} onChosen={onPlaceChosen} />}
+              {inGame && status === 'setup' && picked && (
+                <PickCard
+                  spot={picked}
+                  onStart={() => chooseStart(picked)}
+                  onDestination={() => useGame.getState().setDestination(picked)}
+                  onClose={() => useGame.getState().setPicked(null)}
+                />
+              )}
 
-            {status === 'starting' && (
-              <View style={styles.center} pointerEvents="none">
-                <ActivityIndicator size="large" />
-                <Text style={styles.hint}>주변 길을 불러오는 중</Text>
-              </View>
-            )}
+              {/* 오른쪽 위 버튼들. 게임 중이면 맨 위에 메뉴 */}
+              {inGame && (
+                <>
+                  <Pressable style={[styles.roundButton, { top: playing ? 60 : 10 }]} onPress={faceNorth}>
+                    <Text style={styles.compassText}>N</Text>
+                  </Pressable>
+                  <Pressable style={[styles.roundButton, { top: playing ? 110 : 60 }]} onPress={() => (rig.following = true)}>
+                    <Text style={styles.recenterText}>◎</Text>
+                  </Pressable>
+                </>
+              )}
+              {playing && (
+                <>
+                  <EmoteBubbles picker={picker} />
+                  <EmoteBar top={160} />
+                  <GameMenu top={10} />
+                </>
+              )}
+              <Text style={styles.attribution}>© OpenStreetMap contributors</Text>
+              {booted && screen === 'menu' && <MainMenu />}
+            </View>
 
-            <Pressable style={[styles.roundButton, styles.compass]} onPress={faceNorth}>
-              <Text style={styles.compassText}>N</Text>
-            </Pressable>
-            <Pressable style={[styles.roundButton, styles.recenter]} onPress={() => (rig.following = true)}>
-              <Text style={styles.recenterText}>◎</Text>
-            </Pressable>
-            <Text style={styles.attribution}>© OpenStreetMap contributors</Text>
+            {inGame && (status === 'setup' ? <SetupPanel /> : status === 'lobby' ? <LobbyPanel /> : <GamePanel />)}
+            {playing && <RoundOverlay />}
+            {playing && <ArrivalCelebration rig={rig} />}
           </View>
-
-          {inSetup ? <SetupPanel /> : <GamePanel />}
-          <StatusBar style="dark" />
+          {booted && screen === 'records' && <RecordsScreen />}
+          {booted && screen === 'closet' && <ClosetScreen />}
+          {/* 로딩 화면은 자기 상태바를 쓴다. 메뉴는 배경 하늘(지금 시각)이 어두우면 밝은 글자 */}
+          <StatusBar style={screen === 'menu' && isDarkSky(skyAt(kstHour()).sky) ? 'light' : 'dark'} />
         </SafeAreaView>
+        {!booted && <LoadingScreen onDone={onBooted} />}
       </SafeAreaProvider>
     </GestureHandlerRootView>
   )
@@ -142,13 +200,10 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#fff' },
+  gameArea: { flex: 1 },
   sceneWrap: { flex: 1 },
-  center: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', gap: 8 },
-  hint: { color: '#374151', backgroundColor: 'rgba(255,255,255,0.85)', padding: 8, borderRadius: 8 },
   roundButton: { position: 'absolute', right: 10, width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.92)', alignItems: 'center', justifyContent: 'center' },
-  compass: { top: 10 },
   compassText: { fontSize: 16, fontWeight: '700', color: '#dc2626' },
-  recenter: { top: 60 },
   recenterText: { fontSize: 22, color: '#2563eb' },
   attribution: { position: 'absolute', right: 6, bottom: 4, fontSize: 10, color: '#374151' },
 })

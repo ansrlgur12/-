@@ -14,7 +14,7 @@ export function PickCard({ spot, onStart, onDestination, onClose }: Props) {
     <View style={styles.card}>
       <View style={styles.head}>
         <View style={styles.titleBox}>
-          <Text style={styles.name} numberOfLines={1}>
+          <Text style={[styles.name, spot.resolving && styles.resolving]} numberOfLines={1}>
             {spot.name}
           </Text>
           {spot.address && (
@@ -28,10 +28,10 @@ export function PickCard({ spot, onStart, onDestination, onClose }: Props) {
         </Pressable>
       </View>
       <View style={styles.buttons}>
-        <Pressable style={[styles.button, styles.start]} onPress={onStart}>
+        <Pressable style={[styles.button, styles.start, spot.resolving && styles.disabled]} disabled={spot.resolving} onPress={onStart}>
           <Text style={styles.buttonText}>출발</Text>
         </Pressable>
-        <Pressable style={[styles.button, styles.destination]} onPress={onDestination}>
+        <Pressable style={[styles.button, styles.destination, spot.resolving && styles.disabled]} disabled={spot.resolving} onPress={onDestination}>
           <Text style={styles.buttonText}>도착</Text>
         </Pressable>
       </View>
@@ -50,5 +50,7 @@ const styles = StyleSheet.create({
   button: { flex: 1, borderRadius: 10, paddingVertical: 11, alignItems: 'center' },
   start: { backgroundColor: '#16a34a' },
   destination: { backgroundColor: '#e11d48' },
+  disabled: { opacity: 0.4 },
+  resolving: { color: '#9ca3af', fontWeight: '400' },
   buttonText: { color: '#fff', fontWeight: '700', fontSize: 15 },
 })

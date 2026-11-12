@@ -2,10 +2,11 @@ import { memo, useEffect, useMemo } from 'react'
 import { BufferAttribute, BufferGeometry, DoubleSide, ShapeUtils, Vector2 } from 'three'
 import type { Vec2 } from '@jikjwau/shared/types'
 import { buildRibbon } from './RoadMesh'
+import { terrainHeightAt, waterLevel } from './terrain'
 
 const WATER_COLOR = '#7db9e8'
-// 땅(0)과 도로(0.01~) 사이. 멀리서 깜빡이지 않게 polygonOffset도 함께 쓴다
-const AREA_HEIGHT = 0.006
+// 수면(terrain이 정한 높이)보다 조금 위. 멀리서 깜빡이지 않게 polygonOffset도 함께 쓴다
+const AREA_HEIGHT = 0.2
 const LINE_HEIGHT = 0.004
 
 const toVectors = (flat: number[]) => {
@@ -15,14 +16,15 @@ const toVectors = (flat: number[]) => {
 }
 
 /** 호수·강 하나의 면. 섬은 구멍으로 뚫는다 */
-function buildArea([outerFlat, ...holeFlats]: number[][]): BufferGeometry {
+function buildArea(id: number, [outerFlat, ...holeFlats]: number[][]): BufferGeometry {
   const positions: number[] = []
   const outer = toVectors(outerFlat)
   if (outer.length >= 3) {
+    const level = (waterLevel(id) ?? terrainHeightAt(outer[0].x, outer[0].y)) + AREA_HEIGHT
     const holes = holeFlats.map(toVectors).filter((h) => h.length >= 3)
     const all = [outer, ...holes].flat()
     for (const tri of ShapeUtils.triangulateShape(outer, holes)) {
-      for (const idx of tri) positions.push(all[idx].x, AREA_HEIGHT, -all[idx].y)
+      for (const idx of tri) positions.push(all[idx].x, level, -all[idx].y)
     }
   }
   const geometry = new BufferGeometry()
@@ -44,15 +46,16 @@ function buildLines(waterways: Array<[number, number[]]>): BufferGeometry[] {
     }
     byWidth.set(width, segs)
   }
-  return [...byWidth].map(([width, segs]) => buildRibbon(segs, width, LINE_HEIGHT))
+  // 하천 선은 다리처럼 띄우지 않고 땅 그대로
+  return [...byWidth].map(([width, segs]) => buildRibbon(segs, width, LINE_HEIGHT, undefined, terrainHeightAt))
 }
 
 /**
  * 호수·강 하나. 같은 물이 여러 타일에 들어 있어도 id로 한 번만 그리고,
  * 다른 타일이 들어와도 다시 만들지 않는다 (한강처럼 큰 물은 삼각분할이 무겁다).
  */
-export const WaterArea = memo(function WaterArea({ rings }: { rings: number[][] }) {
-  const geometry = useMemo(() => buildArea(rings), [rings])
+export const WaterArea = memo(function WaterArea({ id, rings }: { id: number; rings: number[][] }) {
+  const geometry = useMemo(() => buildArea(id, rings), [id, rings])
   useEffect(() => () => geometry.dispose(), [geometry])
   return (
     <mesh geometry={geometry}>

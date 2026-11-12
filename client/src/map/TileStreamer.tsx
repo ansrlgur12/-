@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useFrame } from '@react-three/fiber/native'
-import { MAP_LOAD_RADIUS_M, MAP_LOAD_RADIUS_MAX_M } from '@jikjwau/shared/config'
+import { MAP_DETAIL_MAX_CAMERA_DISTANCE_M, MAP_FAR_RADIUS_MAX_M, MAP_LOAD_RADIUS_M, MAP_LOAD_RADIUS_MAX_M } from '@jikjwau/shared/config'
 import { useMapTiles } from '../store/mapTiles'
 import { clamp, type CameraRig } from './cameraRig'
 
@@ -10,10 +10,12 @@ const REFOCUS_DISTANCE_M = 100
 const REFOCUS_INTERVAL_S = 5
 /** 멀리 축소할수록 넓게 불러온다 (카메라 거리 대비) */
 const RADIUS_PER_DISTANCE = 0.9
+/** 먼 땅은 카메라 거리의 이 배수까지 */
+const FAR_RADIUS_PER_DISTANCE = 1.2
 
 /** 카메라가 바라보는 곳을 따라 지도 타일을 불러오게 한다. 그리는 것은 없다 */
 export function TileStreamer({ rig }: { rig: CameraRig }) {
-  const last = useRef<{ x: number; z: number; radius: number } | null>(null)
+  const last = useRef<{ x: number; z: number; radius: number; farRadius: number; near: boolean } | null>(null)
   const elapsed = useRef(0)
   const origin = useMapTiles((s) => s.origin)
 
@@ -26,13 +28,20 @@ export function TileStreamer({ rig }: { rig: CameraRig }) {
     elapsed.current += delta
     const { x, z } = rig.focus
     const radius = Math.round(clamp(rig.distance * RADIUS_PER_DISTANCE, MAP_LOAD_RADIUS_M, MAP_LOAD_RADIUS_MAX_M) / 250) * 250
+    const near = rig.distance <= MAP_DETAIL_MAX_CAMERA_DISTANCE_M
+    // 가까운 타일 범위를 넘어 보일 만큼 축소하면 그 바깥은 땅·물만
+    const farRadius = Math.round(Math.min(rig.distance * FAR_RADIUS_PER_DISTANCE, MAP_FAR_RADIUS_MAX_M) / 500) * 500
     const changed =
-      !last.current || Math.hypot(x - last.current.x, z - last.current.z) > REFOCUS_DISTANCE_M || radius !== last.current.radius
+      !last.current ||
+      Math.hypot(x - last.current.x, z - last.current.z) > REFOCUS_DISTANCE_M ||
+      radius !== last.current.radius ||
+      farRadius !== last.current.farRadius ||
+      near !== last.current.near
     if (!changed && elapsed.current < REFOCUS_INTERVAL_S) return
-    last.current = { x, z, radius }
+    last.current = { x, z, radius, farRadius, near }
     elapsed.current = 0
     // 월드(x, -z) → 로컬(x 동쪽, y 북쪽)
-    useMapTiles.getState().focus({ x, y: -z }, radius)
+    useMapTiles.getState().focus({ x, y: -z }, radius, near, farRadius)
   })
 
   return null

@@ -5,13 +5,18 @@
  *   npm run osm:tiles -w server      # 타일 만들기 (몇 분)
  *
  * 결과: data/tiles-<만든 시각>/<행>/<열>.roads.json.gz, <열>.scenery.json.gz  (형식은 shared/types/map.ts)
+ *       data/tiles-<만든 시각>/region.json — 대한민국 영역 (MapRegion). 이 밖은 그리지도, 가지도 않는다
+ *
+ * 대한민국 국경(OSM 관계, 영해 포함) 밖의 길·건물·물은 버린다 (원본에 섞인 북한 접경 등).
+ * 걸을 수 있는 길을 이어진 묶음으로 나눠 가장 큰 묶음(본토)만 놀이 구역으로 친다.
+ * 다리 없는 섬, 제주도, 울릉도, 독도처럼 걸어서 못 가는 곳의 노드는 타일의 off에 적는다.
  *       data/tiles.json — 서버가 읽을 폴더를 가리킨다. 다 만든 뒤에 바꾸므로 서버를 켠 채로 다시 만들어도 된다.
  *       (Windows에서는 다른 프로그램이 들여다보는 폴더를 rename할 수 없어서, 바꿔치기 대신 가리키는 파일을 쓴다)
  *
  * 노드가 4천만 개 가까이 되므로 좌표·참조는 typed array에 담고,
  * 결과는 위도 띠 단위로 나눠 쓰고 비운다 (메모리 1GB 안팎).
  * 원본은 node → way → relation 순서이고 노드 id가 오름차순이라는 점을 이용해 세 번 읽는다.
- *   1) relation: 물 멀티폴리곤이 쓰는 way id
+ *   1) relation: 물 멀티폴리곤, 대한민국 국경이 쓰는 way id
  *   2) way: 필요한 way와 그 노드 참조
  *   3) node: 필요한 노드 좌표
  */
@@ -19,7 +24,7 @@ import { mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { createOSMStream } from 'osm-pbf-parser-node'
-import type { RoadTile, SceneryTile } from '@jikjwau/shared/types'
+import type { MapRegion, RoadTile, SceneryTile } from '@jikjwau/shared/types'
 import { buildingHeight, isBuilding } from '../src/features/map/buildings'
 import { assembleMultipolygon, contains, isWaterArea, WATERWAY_WIDTH } from '../src/features/map/water'
 import { isWalkable } from '../src/features/road/graph'
@@ -79,8 +84,19 @@ interface WaterRelation {
 }
 const waterRelations: WaterRelation[] = []
 const memberWayIds = new Set<number>()
-for await (const it of stream({ node: false, way: false, relation: ['type', 'natural', 'waterway', 'landuse'] })) {
-  if (it.type !== 'relation' || it.tags?.type !== 'multipolygon' || !isWaterArea(it.tags)) continue
+/** 대한민국 국경 관계(ISO3166-1=KR)의 바깥·안쪽 선 way */
+const border = { outer: [] as number[], inner: [] as number[] }
+for await (const it of stream({ node: false, way: false, relation: ['type', 'natural', 'waterway', 'landuse', 'boundary', 'admin_level', 'ISO3166-1'] })) {
+  if (it.type !== 'relation') continue
+  if (it.tags?.['ISO3166-1'] === 'KR' && it.tags.admin_level === '2') {
+    for (const m of it.members) {
+      if (m.type !== 'way' || (m.role !== 'outer' && m.role !== 'inner')) continue
+      ;(m.role === 'inner' ? border.inner : border.outer).push(m.ref)
+      memberWayIds.add(m.ref)
+    }
+    continue
+  }
+  if (it.tags?.type !== 'multipolygon' || !isWaterArea(it.tags)) continue
   const rel: WaterRelation = { id: it.id, outer: [], inner: [] }
   for (const m of it.members) {
     if (m.type !== 'way') continue
@@ -89,7 +105,8 @@ for await (const it of stream({ node: false, way: false, relation: ['type', 'nat
   }
   waterRelations.push(rel)
 }
-log(`relation: 물 멀티폴리곤 ${waterRelations.length}개, 조각 way ${memberWayIds.size}개`)
+log(`relation: 물 멀티폴리곤 ${waterRelations.length}개, 국경 선 ${border.outer.length + border.inner.length}개, 조각 way ${memberWayIds.size}개`)
+if (border.outer.length === 0) throw new Error('원본에 대한민국 국경(ISO3166-1=KR) 관계가 없습니다')
 
 // ── 2) way ─────────────────────────────────────────────────────
 const enum Kind {
@@ -273,14 +290,15 @@ const tilesOf = (outer: E7Point[]): Array<[number, number]> => {
   return [...set].map((k) => k.split('_').map(Number) as [number, number])
 }
 const withTiles = (id: number, rings: E7Point[][]): WaterPolygon => ({ id, rings, tiles: tilesOf(rings[0]) })
+/** 관계 멤버 way id들 → 선 조각 */
+const lines = (ids: number[]) =>
+  ids.flatMap((id) => {
+    const w = memberWayIndex.get(id)
+    const pts = w === undefined ? null : wayPoints(w)
+    return pts ? [pts] : []
+  })
 const waterPolygons: WaterPolygon[] = []
 for (const rel of waterRelations) {
-  const lines = (ids: number[]) =>
-    ids.flatMap((id) => {
-      const w = memberWayIndex.get(id)
-      const pts = w === undefined ? null : wayPoints(w)
-      return pts ? [pts] : []
-    })
   assembleMultipolygon(lines(rel.outer), lines(rel.inner)).forEach((rings, i) => {
     // relation은 음수 id. 바깥 고리가 여러 개면 고리마다 따로 id를 준다
     waterPolygons.push(withTiles(-(rel.id * 100 + i), rings))
@@ -293,12 +311,139 @@ for (let w = 0; w < wayCount; w++) {
 }
 log(`물 면 ${waterPolygons.length}개 조립, 타일 배정 ${waterPolygons.reduce((n, p) => n + p.tiles.length, 0)}건`)
 
+// ── 대한민국 영역 ───────────────────────────────────────────────
+// 국경 고리의 변을 위도 행마다 나눠 두고(점 안팎 판정을 빠르게), 국경이 지나는 타일을 표시한다
+const borderPolys = assembleMultipolygon(lines(border.outer), lines(border.inner))
+if (borderPolys.length === 0) throw new Error('대한민국 국경 고리를 만들지 못했습니다 (원본에 국경 선이 빠져 있음)')
+const borderEdges = new Map<number, number[]>()
+const borderTiles = new Set<string>()
+let regionMinRow = Infinity
+let regionMaxRow = -Infinity
+let regionMinCol = Infinity
+let regionMaxCol = -Infinity
+let borderVertices = 0
+for (const rings of borderPolys) {
+  for (const ring of rings) {
+    borderVertices += ring.length
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i]
+      const b = ring[(i + 1) % ring.length]
+      const r0 = Math.floor(Math.min(a.y, b.y) / E7_PER_TILE)
+      const r1 = Math.floor(Math.max(a.y, b.y) / E7_PER_TILE)
+      for (let r = r0; r <= r1; r++) {
+        let edges = borderEdges.get(r)
+        if (!edges) borderEdges.set(r, (edges = []))
+        edges.push(a.x, a.y, b.x, b.y)
+      }
+      const steps = Math.ceil(Math.max(Math.abs(b.x - a.x), Math.abs(b.y - a.y)) / (E7_PER_TILE / 8)) + 1
+      for (let s = 0; s <= steps; s++) {
+        const x = a.x + ((b.x - a.x) * s) / steps
+        const y = a.y + ((b.y - a.y) * s) / steps
+        borderTiles.add(`${Math.floor(y / E7_PER_TILE)}_${Math.floor(x / E7_PER_TILE)}`)
+      }
+      regionMinRow = Math.min(regionMinRow, r0)
+      regionMaxRow = Math.max(regionMaxRow, r1)
+      regionMinCol = Math.min(regionMinCol, Math.floor(Math.min(a.x, b.x) / E7_PER_TILE))
+      regionMaxCol = Math.max(regionMaxCol, Math.floor(Math.max(a.x, b.x) / E7_PER_TILE))
+    }
+  }
+}
+/** 점이 국경 안인지 (고리 전체 짝홀 규칙: 구멍도 함께 처리된다) */
+const insideBorder = (x: number, y: number) => {
+  const edges = borderEdges.get(Math.floor(y / E7_PER_TILE))
+  if (!edges) return false
+  let inside = false
+  for (let i = 0; i < edges.length; i += 4) {
+    const ax = edges[i]
+    const ay = edges[i + 1]
+    const bx = edges[i + 2]
+    const by = edges[i + 3]
+    if (ay > y !== by > y && x < ((bx - ax) * (y - ay)) / (by - ay) + ax) inside = !inside
+  }
+  return inside
+}
+/** 타일이 영역에 드는지: 국경이 지나면 걸친 것으로, 아니면 가운데 점으로 */
+const regionTileCache = new Map<string, boolean>()
+const inRegionTile = (row: number, col: number) => {
+  const key = `${row}_${col}`
+  let v = regionTileCache.get(key)
+  if (v === undefined) {
+    v = borderTiles.has(key) || insideBorder((col + 0.5) * E7_PER_TILE, (row + 0.5) * E7_PER_TILE)
+    regionTileCache.set(key, v)
+  }
+  return v
+}
+/** 점이 국경 안인지. 국경이 지나는 타일만 정확히 따진다 */
+const insidePoint = (x: number, y: number) => {
+  const row = Math.floor(y / E7_PER_TILE)
+  const col = Math.floor(x / E7_PER_TILE)
+  return borderTiles.has(`${row}_${col}`) ? insideBorder(x, y) : inRegionTile(row, col)
+}
+const nodeInsideCache = new Int8Array(needIds.length)
+const nodeInside = (k: number) => {
+  if (nodeInsideCache[k] === 0) nodeInsideCache[k] = hasCoord(k) && insidePoint(lngE7[k], latE7[k]) ? 1 : 2
+  return nodeInsideCache[k] === 1
+}
+const regionRows: number[][] = []
+for (let r = regionMinRow; r <= regionMaxRow; r++) {
+  const row = [r]
+  let runStart: number | null = null
+  for (let c = regionMinCol; c <= regionMaxCol + 1; c++) {
+    const inside = c <= regionMaxCol && inRegionTile(r, c)
+    if (inside && runStart === null) runStart = c
+    if (!inside && runStart !== null) {
+      row.push(runStart, c - 1)
+      runStart = null
+    }
+  }
+  if (row.length > 1) regionRows.push(row)
+}
+log(`국경: 면 ${borderPolys.length}개, 점 ${borderVertices}개, 영역 타일 ${regionTileCache.size}개 검사`)
+
+// ── 걸어서 이어진 길 묶음 ──────────────────────────────────────
+// 국경 안의 걸을 수 있는 길로 노드를 묶고(union-find), 가장 큰 묶음을 본토로 본다
+const parent = new Int32Array(needIds.length)
+for (let i = 0; i < parent.length; i++) parent[i] = i
+const find = (k: number) => {
+  while (parent[k] !== k) {
+    parent[k] = parent[parent[k]]
+    k = parent[k]
+  }
+  return k
+}
+const isRoadNode = new Uint8Array(needIds.length)
+for (let w = 0; w < wayCount; w++) {
+  if (wayKind.a[w] !== Kind.Road) continue
+  for (let i = wayStart.a[w] + 1; i < wayStart.a[w] + wayLen.a[w]; i++) {
+    const a = refIdx[i - 1]
+    const c = refIdx[i]
+    if (!nodeInside(a) || !nodeInside(c)) continue
+    isRoadNode[a] = 1
+    isRoadNode[c] = 1
+    const ra = find(a)
+    const rc = find(c)
+    if (ra !== rc) parent[ra] = rc
+  }
+}
+const groupSize = new Int32Array(needIds.length)
+let mainland = -1
+let roadNodeCount = 0
+for (let k = 0; k < needIds.length; k++) {
+  if (!isRoadNode[k]) continue
+  roadNodeCount++
+  const r = find(k)
+  groupSize[r]++
+  if (mainland < 0 || groupSize[r] > groupSize[mainland]) mainland = r
+}
+const onMainland = (k: number) => find(k) === mainland
+log(`길 노드 ${roadNodeCount}개 중 본토 ${groupSize[mainland]}개 (나머지는 섬이거나 끊긴 길)`)
+
 // ── 띠 단위로 타일 쓰기 ─────────────────────────────────────────
 interface Bucket {
   row: number
   col: number
   nodeSeen: Set<number>
-  roads: RoadTile
+  roads: RoadTile & { off: number[] }
   scenery: SceneryTile
 }
 
@@ -313,7 +458,7 @@ for (let bandStart = globalMinRow; bandStart <= globalMaxRow; bandStart += BAND_
     const key = `${row}_${col}`
     let b = buckets.get(key)
     if (!b) {
-      b = { row, col, nodeSeen: new Set(), roads: { nodes: [], segments: [] }, scenery: { buildings: [], water: [], waterways: [] } }
+      b = { row, col, nodeSeen: new Set(), roads: { nodes: [], segments: [], off: [] }, scenery: { buildings: [], water: [], waterways: [] } }
       buckets.set(key, b)
     }
     return b
@@ -329,6 +474,7 @@ for (let bandStart = globalMinRow; bandStart <= globalMaxRow; bandStart += BAND_
     b.nodeSeen.add(id)
     b.roads.nodes.push(id)
     pushLocal(b.roads.nodes, b, lngE7[k], latE7[k])
+    if (!onMainland(k)) b.roads.off.push(id)
   }
 
   for (let w = 0; w < wayCount; w++) {
@@ -342,7 +488,7 @@ for (let bandStart = globalMinRow; bandStart <= globalMaxRow; bandStart += BAND_
       for (let i = start + 1; i < end; i++) {
         const a = refIdx[i - 1]
         const c = refIdx[i]
-        if (!hasCoord(a) || !hasCoord(c)) continue
+        if (!nodeInside(a) || !nodeInside(c)) continue
         const ra = rowOf(a)
         const ca = colOf(a)
         const rc = rowOf(c)
@@ -369,7 +515,7 @@ for (let bandStart = globalMinRow; bandStart <= globalMaxRow; bandStart += BAND_
       if (!ok) continue
       const n = end - 1 - start
       const row = Math.floor(sy / n / E7_PER_TILE)
-      if (!inBand(row)) continue
+      if (!inBand(row) || !insidePoint(sx / n, sy / n)) continue
       const b = bucket(row, Math.floor(sx / n / E7_PER_TILE))
       const flat: number[] = []
       for (let i = start; i < end - 1; i++) pushLocal(flat, b, lngE7[refIdx[i]], latE7[refIdx[i]])
@@ -388,7 +534,7 @@ for (let bandStart = globalMinRow; bandStart <= globalMaxRow; bandStart += BAND_
         }
         const row = Math.floor((latE7[a] + latE7[c]) / 2 / E7_PER_TILE)
         const col = Math.floor((lngE7[a] + lngE7[c]) / 2 / E7_PER_TILE)
-        if (!inBand(row)) {
+        if (!inBand(row) || !inRegionTile(row, col)) {
           run = null
           continue
         }
@@ -407,7 +553,7 @@ for (let bandStart = globalMinRow; bandStart <= globalMaxRow; bandStart += BAND_
 
   for (const poly of waterPolygons) {
     for (const [row, col] of poly.tiles) {
-      if (!inBand(row)) continue
+      if (!inBand(row) || !inRegionTile(row, col)) continue
       const b = bucket(row, col)
       b.scenery.water.push([
         poly.id,
@@ -424,7 +570,8 @@ for (let bandStart = globalMinRow; bandStart <= globalMaxRow; bandStart += BAND_
     const dir = path.join(OUT, String(b.row))
     await mkdir(dir, { recursive: true })
     if (b.roads.segments.length > 0) {
-      const gz = gzipSync(JSON.stringify(b.roads))
+      const { off, ...rest } = b.roads
+      const gz = gzipSync(JSON.stringify(off.length > 0 ? b.roads : rest))
       await writeFile(path.join(dir, `${b.col}.roads.json.gz`), gz)
       roadFiles++
       bytes += gz.length
@@ -440,6 +587,8 @@ for (let bandStart = globalMinRow; bandStart <= globalMaxRow; bandStart += BAND_
   log(`위도 ${(bandStart / 100).toFixed(1)}~${((bandEnd + 1) / 100).toFixed(1)}: 타일 ${buckets.size}개`)
 }
 
+await mkdir(OUT, { recursive: true })
+await writeFile(path.join(OUT, 'region.json'), JSON.stringify({ rows: regionRows } satisfies MapRegion))
 await writeFile(
   path.join(DATA_DIR, 'tiles.json'),
   JSON.stringify({ dir: OUT_NAME, source: path.basename(PBF), builtAt: new Date().toISOString(), roadFiles, sceneryFiles }, null, 2),

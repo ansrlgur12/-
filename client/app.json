@@ -19,7 +19,14 @@
       "predictiveBackGestureEnabled": false
     },
     "plugins": [
-      "expo-asset"
+      "expo-asset",
+      "expo-audio",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "지금 있는 곳을 출발지로 정하려고 위치를 사용해요."
+        }
+      ]
     ]
   }
 }

@@ -4,10 +4,12 @@ import type {
   GameSnapshot,
   Hand,
   MoveReason,
+  NormalLimit,
   NodeId,
   Point,
   RoadArrival,
   Seat,
+  SeatController,
   Vec2,
 } from '@jikjwau/shared/types'
 import { MOVE_SPEED_MPS, RPS_RESULT_SHOW_MS, RPS_TIMEOUT_MS, SEAT_DIRECTION } from '@jikjwau/shared/config'
@@ -28,18 +30,18 @@ export interface GameOptions {
   startNode: NodeId
   destination: Vec2
   arrivalRadiusM: number
-  /** 사람이 앉은 자리. 나머지 두 자리는 AI */
-  seat: Seat
+  /** 자리마다 사람(user)인지 AI인지. 사람이 시간 안에 안 내면 AI로 바뀐다 */
+  controllers: Record<Seat, SeatController>
+  /** 일반 모드의 제한. 없으면(하드코어) 도착할 때까지 */
+  limit?: NormalLimit
   rand?: () => number
   now?: () => number
 }
 
-const SEATS: Seat[] = ['A', 'B', 'C']
-/** 마감 직후 도착한 선택은 받아 준다 (네트워크 지연) */
-const LATE_GRACE_MS = 3000
+export const SEATS: Seat[] = ['A', 'B', 'C']
 /** 자동 이동(막다른 길·외길)이 끝없이 이어지는 것을 막는다 */
 const MAX_AUTO_MOVES = 50
-/** 사람 차례 없이 이어지는 AI끼리의 판. 정상 진행이지만 응답 하나가 끝없이 커지지 않게 막는다 */
+/** 사람 차례 없이 이어지는 AI끼리의 판. 정상 진행이지만 한 번에 끝없이 커지지 않게 막는다 */
 const MAX_AI_ROUNDS = 2000
 
 const round1 = (n: number) => Math.round(n * 10) / 10
@@ -48,20 +50,34 @@ const toPoint = (p: Vec2): Point => [round1(p.x), round1(p.y)]
 /**
  * 게임 한 판의 진행. 가위바위보 판정, 방향 결정, 이동, 도착을 모두 여기서 정한다.
  * 사람이 낼 차례가 되면 멈추고, 그 사이에 일어난 일은 GameEvent 목록으로 돌려준다.
+ *
+ * 사람 자리는 submit으로 내고, 마감이 지나면 timeout()이 안 낸 자리를 AI로 바꿔 마무리한다.
+ * 돌아온 사람(setController 'user')은 진행 중인 판은 AI에게 맡기고 다음 판부터 이어받는다.
+ * 사람이 한 명도 없으면 AI끼리 끝없이 가지 않도록 멈춰(paused) 기다린다.
+ * 일반 모드는 제한(시간·횟수)을 다 쓰면 다음 가위바위보 대신 그 자리에서 끝난다(ENDED).
  */
 export class Game {
   phase: GameSnapshot['phase'] = 'RPS'
   rpsCount = 0
   distanceM = 0
+  paused = false
   /** 지나온 노드 (기록용) */
   readonly trail: NodeId[]
   readonly startedAt: number
+  /** 이번 판 마감 시각 (연출 시간 포함) */
+  deadline = 0
 
   private node: NodeId
   private arrival: RoadArrival | null = null
   private participants: Seat[] = []
   private rematch = false
-  private deadline = 0
+  private hands: Partial<Record<Seat, Hand>> = {}
+  private readonly controllers: Record<Seat, SeatController>
+  /** 다음 판부터 사람에게 돌려줄 자리 */
+  private readonly returning = new Set<Seat>()
+  /** 판이 새로 시작될 때마다 늘어난다 (마감을 다시 잡을지 판단) */
+  private roundSerial = 0
+  private aiRounds = 0
   private busy = false
   private readonly rand: () => number
   private readonly now: () => number
@@ -69,6 +85,7 @@ export class Game {
   constructor(private readonly opts: GameOptions) {
     this.node = opts.startNode
     this.trail = [opts.startNode]
+    this.controllers = { ...opts.controllers }
     this.rand = opts.rand ?? Math.random
     this.now = opts.now ?? Date.now
     this.startedAt = this.now()
@@ -78,8 +95,50 @@ export class Game {
     return this.opts.source.graph
   }
 
+  /** 도착했거나 제한을 다 써서 끝났다 */
+  get finished() {
+    return this.phase === 'ARRIVED' || this.phase === 'ENDED'
+  }
+
+  /** 시간 제한이 있으면 끝나는 시각 */
+  get endsAt(): number | null {
+    const limit = this.opts.limit
+    return limit?.kind === 'time' ? this.startedAt + limit.minutes * 60_000 : null
+  }
+
+  private get limitReached() {
+    const limit = this.opts.limit
+    if (!limit) return false
+    return limit.kind === 'time' ? this.now() >= this.endsAt! : this.rpsCount >= limit.count
+  }
+
   private pos(id: NodeId): Vec2 {
     return this.graph.nodes.get(id)!
+  }
+
+  /** 도착 원에 들어선 지점 (길 중간일 수 있다). 도착하기 전에는 null */
+  private endPoint: Vec2 | null = null
+
+  /** 지금 서 있는 곳 */
+  private here(): Vec2 {
+    return this.endPoint ?? this.pos(this.node)
+  }
+
+  /** 지나온 길 (다시 들어온 사람에게 보여 줄 때) */
+  trailPoints(): Point[] {
+    const points = this.trail.map((id) => toPoint(this.pos(id)))
+    if (this.endPoint) points.push(toPoint(this.endPoint))
+    return points
+  }
+
+  controllerOf(seat: Seat): SeatController {
+    return this.controllers[seat]
+  }
+
+  /** 이번 판에서 아직 안 낸 사람 자리 */
+  waitingFor(): Seat[] {
+    if (this.finished || this.paused) return []
+    return this.participants.filter((s) => this.controllers[s] === 'user' && !this.hands[s])
   }
 
   /** 출발 방향은 무작위로 정하고 첫 가위바위보까지 진행한다 */
@@ -91,22 +150,78 @@ export class Game {
     })
   }
 
-  /** 사람이 낸 손. null이거나 마감이 지났으면 AI가 대신 낸다 */
-  choose(hand: Hand | null): Promise<GameEvent[]> {
+  /** 사람 자리의 선택. 이번 판의 사람이 다 냈으면 판정하고 이벤트를, 아직이면 null */
+  async submit(seat: Seat, hand: Hand): Promise<GameEvent[] | null> {
+    if (this.finished) throw new HttpError(409, '이미 끝난 게임입니다')
+    if (this.busy || this.paused || !this.participants.includes(seat) || this.controllers[seat] !== 'user') {
+      throw new HttpError(400, '이번 판에 낼 차례가 아닙니다')
+    }
+    if (this.hands[seat]) throw new HttpError(400, '이미 냈습니다')
+    this.hands[seat] = hand
+    if (this.waitingFor().length > 0) return null
+    return this.exclusive((events) => this.resolveCurrent([], events))
+  }
+
+  /** 마감이 지났다: 안 낸 사람 자리는 AI로 바꾸고 대신 내서 판정한다 */
+  timeout(): Promise<GameEvent[]> {
     return this.exclusive(async (events) => {
-      if (this.phase === 'ARRIVED') throw new HttpError(409, '이미 도착한 게임입니다')
-      const timedOut = hand === null || this.now() > this.deadline + LATE_GRACE_MS
-      const hands: Partial<Record<Seat, Hand>> = {}
-      for (const seat of this.participants) {
-        hands[seat] = seat === this.opts.seat && !timedOut ? hand! : randomHand(this.rand)
+      const late = this.waitingFor()
+      if (late.length === 0) return
+      for (const seat of late) this.controllers[seat] = 'ai'
+      await this.resolveCurrent(late, events)
+    })
+  }
+
+  /** 시간 제한이 지났다: 낼 차례를 기다리던 중이어도 그 자리에서 끝낸다 */
+  expire(): Promise<GameEvent[]> {
+    return this.exclusive(async () => {
+      if (this.finished || this.endsAt === null || this.now() < this.endsAt) return
+      this.end()
+    })
+  }
+
+  private end() {
+    this.phase = 'ENDED'
+    this.arrival = null
+    this.participants = []
+    this.hands = {}
+    this.paused = false
+  }
+
+  /**
+   * 자리 주인 바꾸기. 'user'(돌아옴)는 다음 판부터, 게임이 멈춰 있었으면 바로 이어받는다.
+   * 'ai'(나감)는 바로 바뀌고, 그 사람만 기다리던 판이면 판정까지 한다.
+   */
+  setController(seat: Seat, controller: SeatController): Promise<GameEvent[]> {
+    return this.exclusive(async (events) => {
+      if (this.finished) return
+      if (controller === 'user') {
+        if (this.controllers[seat] === 'user') {
+          this.returning.delete(seat)
+          return
+        }
+        if (!this.paused) {
+          this.returning.add(seat)
+          return
+        }
+        this.controllers[seat] = 'user'
+        this.paused = false
+        this.roundSerial++
+        // 멈춘 판에 돌아온 사람 자리가 없으면 AI끼리 바로 하고 넘어간다
+        if (!this.participants.includes(seat)) await this.resolveCurrent([], events)
+        return
       }
-      await this.resolve(hands, timedOut ? [this.opts.seat] : [], events)
+      this.returning.delete(seat)
+      if (this.controllers[seat] === 'ai') return
+      const wasWaiting = this.waitingFor().includes(seat)
+      this.controllers[seat] = 'ai'
+      if (wasWaiting && this.waitingFor().length === 0) await this.resolveCurrent([], events)
     })
   }
 
   snapshot(): GameSnapshot {
-    const here = this.pos(this.node)
-    const waiting = this.phase !== 'ARRIVED'
+    const here = this.here()
+    const waiting = !this.finished
     return {
       phase: this.phase,
       position: toPoint(here),
@@ -116,6 +231,9 @@ export class Game {
         elapsedMs: this.now() - this.startedAt,
         remainingM: Math.round(distance(here, this.opts.destination)),
       },
+      controllers: { ...this.controllers },
+      returning: [...this.returning],
+      paused: this.paused,
       rps: waiting
         ? {
             participants: this.participants,
@@ -125,20 +243,23 @@ export class Game {
               const via = this.arrival!.options.find((o) => o.direction === direction)!.via
               return { seat, direction, toward: toPoint(this.pos(via)) }
             }),
-            timeLeftMs: Math.max(0, this.deadline - this.now()),
+            submitted: this.participants.filter((s) => !!this.hands[s]),
+            timeLeftMs: this.paused ? RPS_TIMEOUT_MS : Math.max(0, this.deadline - this.now()),
           }
         : null,
     }
   }
 
-  /** 요청이 겹치지 않게 하고, 사람 차례가 되면 연출 시간만큼 늦춰 마감을 정한다 */
+  /** 겹쳐 실행되지 않게 하고, 새 판이 시작됐으면 연출 시간만큼 늦춰 마감을 정한다 */
   private async exclusive(run: (events: GameEvent[]) => Promise<void>): Promise<GameEvent[]> {
     if (this.busy) throw new HttpError(409, '이전 요청을 처리하는 중입니다')
     this.busy = true
+    const serial = this.roundSerial
     try {
       const events: GameEvent[] = []
+      this.aiRounds = 0
       await run(events)
-      this.deadline = this.now() + playbackMs(events) + RPS_TIMEOUT_MS
+      if (this.roundSerial !== serial) this.deadline = this.now() + playbackMs(events) + RPS_TIMEOUT_MS
       return events
     } finally {
       this.busy = false
@@ -164,10 +285,19 @@ export class Game {
         path = walkToDecision(this.graph, this.node, via)
       }
 
-      const reached = path.findIndex((id, k) => k > 0 && distance(this.pos(id), this.opts.destination) <= this.opts.arrivalRadiusM)
-      if (reached > 0) path = path.slice(0, reached + 1)
+      // 도착 원에 닿는 순간 끝난다: 길이 원을 처음 넘는 지점에서 멈춘다 (노드 사이여도)
+      const entry = enterCircle(
+        path.map((id) => this.pos(id)),
+        this.opts.destination,
+        this.opts.arrivalRadiusM,
+      )
+      if (entry) path = path.slice(0, entry.index + 1)
 
       const points = path.map((id) => this.pos(id))
+      if (entry) {
+        points.push(entry.point)
+        this.endPoint = entry.point
+      }
       let length = 0
       for (let k = 1; k < points.length; k++) length += distance(points[k - 1], points[k])
       this.distanceM += length
@@ -175,7 +305,7 @@ export class Game {
       this.node = path[path.length - 1]
       events.push({ type: 'move', reason, direction, path: points.map(toPoint), distanceM: Math.round(length) })
 
-      if (reached > 0) {
+      if (entry) {
         this.phase = 'ARRIVED'
         this.arrival = null
         this.participants = []
@@ -214,16 +344,34 @@ export class Game {
   }
 
   private async startRound(participants: Seat[], rematch: boolean, events: GameEvent[]) {
+    if (this.limitReached) return this.end()
+    // 돌아온 사람은 새 판부터 이어받는다
+    for (const seat of this.returning) this.controllers[seat] = 'user'
+    this.returning.clear()
+
     this.participants = participants
     this.rematch = rematch
+    this.hands = {}
     this.phase = rematch ? 'RPS_REMATCH' : 'RPS'
-    if (participants.includes(this.opts.seat)) return
+    this.roundSerial++
+
+    if (!SEATS.some((s) => this.controllers[s] === 'user')) {
+      // 사람이 아무도 없으면 누가 돌아올 때까지 멈춘다
+      this.paused = true
+      return
+    }
+    if (participants.some((s) => this.controllers[s] === 'user')) return
 
     // 사람이 빠진 판은 AI끼리 바로 한다
-    if (events.filter((e) => e.type === 'rps').length > MAX_AI_ROUNDS) throw new Error('too many AI rounds')
+    if (++this.aiRounds > MAX_AI_ROUNDS) throw new Error('too many AI rounds')
+    await this.resolveCurrent([], events)
+  }
+
+  /** 이번 판에서 사람이 안 낸 자리는 AI가 내고 판정한다 */
+  private async resolveCurrent(timedOut: Seat[], events: GameEvent[]) {
     const hands: Partial<Record<Seat, Hand>> = {}
-    for (const seat of participants) hands[seat] = randomHand(this.rand)
-    await this.resolve(hands, [], events)
+    for (const seat of this.participants) hands[seat] = this.hands[seat] ?? randomHand(this.rand)
+    await this.resolve(hands, timedOut, events)
   }
 
   private async resolve(hands: Partial<Record<Seat, Hand>>, timedOut: Seat[], events: GameEvent[]) {
@@ -251,4 +399,30 @@ export function playbackMs(events: GameEvent[]): number {
   let ms = 0
   for (const e of events) ms += e.type === 'move' ? (e.distanceM / MOVE_SPEED_MPS) * 1000 : RPS_RESULT_SHOW_MS
   return Math.round(ms)
+}
+
+/**
+ * 꺾은선 points를 따라가다 원(center, radius)에 처음 닿는 지점.
+ * index는 그 지점 바로 앞 점. 출발점이 이미 원 안이면 무시한다 (첫 구간부터 본다)
+ */
+export function enterCircle(points: Vec2[], center: Vec2, radius: number): { index: number; point: Vec2 } | null {
+  for (let k = 1; k < points.length; k++) {
+    const a = points[k - 1]
+    const b = points[k]
+    const fx = b.x - a.x
+    const fy = b.y - a.y
+    const gx = a.x - center.x
+    const gy = a.y - center.y
+    const A = fx * fx + fy * fy
+    const B = 2 * (fx * gx + fy * gy)
+    const C = gx * gx + gy * gy - radius * radius
+    if (A === 0) continue
+    const disc = B * B - 4 * A * C
+    if (disc < 0) continue
+    // 원에 들어가는 쪽 근 (a가 이미 안이면 a 자리)
+    const t = C <= 0 ? 0 : (-B - Math.sqrt(disc)) / (2 * A)
+    if (t < 0 || t > 1 || (k === 1 && C <= 0)) continue
+    return { index: k - 1, point: { x: a.x + fx * t, y: a.y + fy * t } }
+  }
+  return null
 }
