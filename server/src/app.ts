@@ -1,4 +1,6 @@
 import { createServer } from 'node:http'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
 import express from 'express'
 import cors from 'cors'
 import { attachSocket } from './socket'
@@ -19,6 +21,16 @@ app.use(express.json())
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true })
+})
+
+/**
+ * 개인정보처리방침 (App Store 심사에 필요). 문의 이메일은 git에 두지 않고 .env의 CONTACT_EMAIL로 채운다
+ */
+const PRIVACY_HTML = readFileSync(path.resolve(import.meta.dirname, '../public/privacy.html'), 'utf8')
+app.get('/privacy', (_req, res) => {
+  const contact = process.env.CONTACT_EMAIL ?? ''
+  const escaped = contact.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`)
+  res.type('html').send(PRIVACY_HTML.replace('{{CONTACT_EMAIL}}', escaped ? `<a href="mailto:${escaped}">${escaped}</a>` : '(준비 중)'))
 })
 
 app.use('/map', mapRouter)

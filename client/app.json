@@ -4,17 +4,21 @@
     "slug": "jikjwau",
     "version": "1.0.0",
     "orientation": "default",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/app/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": false
+      "supportsTablet": false,
+      "bundleIdentifier": "site.kihyuk.jjw",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "site.kihyuk.jjw",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "backgroundColor": "#3d9be9",
+        "foregroundImage": "./assets/app/adaptive-foreground.png",
+        "backgroundImage": "./assets/app/adaptive-background.png"
       },
       "predictiveBackGestureEnabled": false
     },
@@ -25,6 +29,15 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "지금 있는 곳을 출발지로 정하려고 위치를 사용해요."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#1f99fc",
+          "image": "./assets/app/splash.png",
+          "imageWidth": 300,
+          "resizeMode": "contain"
         }
       ]
     ]

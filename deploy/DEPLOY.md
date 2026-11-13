@@ -52,21 +52,26 @@ nvm exec 24 npm ci -w server -w shared --include-workspace-root
 
 ## 4. PC → 서버: 지도 타일 올리기 (약 450MB, 파일 15만 개라 묶어서 보낸다)
 
-PC (PowerShell). 폴더 이름은 `server/data/tiles.json`의 `dir`:
+PC (PowerShell). 폴더 이름은 `server/data/tiles.json`의 `dir`.
+root로 바로 SSH가 막혀 있을 수 있어서 `ansrlgur12` 홈으로 올린 뒤 서버에서 옮긴다:
 
 ```powershell
 cd C:\Dev\project_sng\server\data
 tar -cf tiles.tar tiles-20261113-062913 tiles.json
-scp -P 6539 tiles.tar root@<서버IP>:/root/jikjwau/server/data/
-del tiles.tar
+scp -P 6539 tiles.tar ansrlgur12@jjw.kihyuk.site:/home/ansrlgur12/
+Remove-Item tiles.tar
 ```
 
-서버:
+> DNS가 아직 안 퍼져 접속이 안 되면 `jjw.kihyuk.site` 대신 서버 IP.
+
+서버 (root). `server/data`는 git에 없어서 먼저 만든다:
 
 ```bash
-cd ~/jikjwau/server/data
+mkdir -p /root/jikjwau/server/data
+mv /home/ansrlgur12/tiles.tar /root/jikjwau/server/data/
+cd /root/jikjwau/server/data
 tar -xf tiles.tar && rm tiles.tar
-ls   # tiles-20261113-062913, tiles.json
+ls   # tiles-20261113-062913  tiles.json
 ```
 
 > 땅 높이(`data/terrain`)는 올리지 않는다. 서버가 처음 필요할 때 만들고, 아래 8번에서 미리 만들어 둔다.
@@ -77,13 +82,14 @@ ls   # tiles-20261113-062913, tiles.json
 ```bash
 cd ~/jikjwau/server
 cp .env.example .env
-nano .env   # KAKAO_REST_API_KEY=새 키
+nano .env   # KAKAO_REST_API_KEY=새 키, CONTACT_EMAIL=개인정보처리방침에 보일 문의 이메일
 ```
 
 ## 6. 서버: PM2로 실행
 
 ```bash
 cd ~/jikjwau
+nvm use 20                   # pm2는 Node 20 쪽에 깔려 있다 (nvm install 24 뒤에는 24로 바뀌어 있어서 pm2를 못 찾는다)
 NODE24=$(nvm which 24) pm2 start deploy/ecosystem.config.cjs
 pm2 save                     # 재부팅해도 다시 켜지게 (pm2 startup을 이미 해 뒀다면)
 curl http://127.0.0.1:4000/health   # {"ok":true}
@@ -98,6 +104,7 @@ sudo ln -s /etc/nginx/sites-available/jjw.kihyuk.site /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d jjw.kihyuk.site        # certbot이 없으면: sudo apt install certbot python3-certbot-nginx
 curl https://jjw.kihyuk.site/health            # {"ok":true}
+# 개인정보처리방침: https://jjw.kihyuk.site/privacy (App Store에 이 주소를 적는다)
 ```
 
 ## 8. 서버: 전국 땅 높이 미리 만들기 (백그라운드, 오래 걸림)
@@ -113,13 +120,46 @@ tail -f ~/terrain.log
 
 ## 9. 앱이 이 서버를 보게
 
-`client/.env` (git에 안 올라간다):
+앱은 서버 주소를 이렇게 정한다 (`client/src/api/http.ts`):
 
-```
-EXPO_PUBLIC_API_URL=https://jjw.kihyuk.site
-```
+- `EXPO_PUBLIC_API_URL`이 있으면 그 주소
+- 없으면 Expo를 켠 PC의 IP + 4000 (개발 중에 PC에서 돌리는 서버, 같은 와이파이)
 
-Expo를 다시 켠다: `npx expo start -c`. 개발 PC 서버로 돌아가려면 이 줄을 지운다.
+그래서 출시 서버로 바꾸려면 이 값만 정하면 된다.
+
+### 9-1. 먼저 서버가 바깥에서 되는지 확인
+
+휴대폰 사파리로 `https://jjw.kihyuk.site/health` 를 연다. `{"ok":true}`가 보이면 된다.
+(안 보이면 7번 nginx·HTTPS를 다시 확인. 앱에서 확인하는 것보다 원인을 찾기 쉽다)
+
+### 9-2. 개발 중 (Expo Go로 출시 서버에 붙여 보기)
+
+1. `C:\Dev\project_sng\client\.env` 파일을 만든다 (없으면 새로, git에는 안 올라간다):
+
+   ```
+   EXPO_PUBLIC_API_URL=https://jjw.kihyuk.site
+   ```
+
+   - 끝에 `/`를 붙이지 않는다 (`/map/...`처럼 앱이 뒤에 붙인다)
+   - `http`가 아니라 `https`
+2. 켜져 있는 Expo를 끄고(Ctrl+C) 캐시를 지우며 다시 켠다. `EXPO_PUBLIC_` 값은 번들에 박히므로 다시 켜야 바뀐다:
+
+   ```powershell
+   cd C:\Dev\project_sng\client
+   npx expo start -c
+   ```
+3. 아이폰 Expo Go에서 다시 연다. 이제 PC 서버(`npm run dev:server`)를 꺼도 게임이 된다.
+4. 잘 붙었는지: 메인 화면에 "서버에 연결하는 중…"이 안 뜨고, 장소 검색·혼자 하기가 되면 된다.
+
+### 9-3. 다시 PC 서버로 돌아가기
+
+`client/.env`에서 그 줄을 지우거나 앞에 `#`을 붙이고, 다시 `npx expo start -c`.
+(서버 코드를 고치며 시험할 때는 PC 서버가 편하다)
+
+### 9-4. 출시용 빌드(EAS)
+
+스토어에 올릴 앱은 Expo Go가 아니라 EAS로 만든다. 그때도 같은 값을 쓴다:
+`client/eas.json`의 빌드 프로필 `env`에 `"EXPO_PUBLIC_API_URL": "https://jjw.kihyuk.site"` (출시 빌드를 만들 때 함께 정리).
 
 ---
 
