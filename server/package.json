@@ -10,7 +10,8 @@
     "test": "vitest run --passWithNoTests",
     "bot": "tsx scripts/bot.ts",
     "osm:download": "tsx scripts/download-osm.ts",
-    "osm:tiles": "node --max-old-space-size=6144 --import tsx scripts/build-tiles.ts"
+    "osm:tiles": "node --max-old-space-size=6144 --import tsx scripts/build-tiles.ts",
+    "terrain:prebuild": "tsx scripts/prebuild-terrain.ts"
   },
   "dependencies": {
     "@jikjwau/shared": "^0.0.0",
