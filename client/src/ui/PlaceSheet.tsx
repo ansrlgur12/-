@@ -209,7 +209,7 @@ export function PlaceSheet({ near, onChosen }: Props) {
 
             <View style={styles.bottom}>
               <Pressable style={({ pressed }) => [styles.back, pressed && styles.backPressed]} onPress={close}>
-                <Text style={styles.backText}>← {sheet === 'start' && !startChosen ? '메뉴로 돌아가기' : '닫기'}</Text>
+                <Text style={styles.backText}>{sheet === 'start' && !startChosen ? '메뉴로 돌아가기' : '닫기'}</Text>
               </Pressable>
             </View>
           </KeyboardAvoidingView>

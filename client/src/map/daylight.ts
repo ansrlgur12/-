@@ -2,8 +2,8 @@ import { AdditiveBlending, Color, DoubleSide, MeshBasicMaterial } from 'three'
 
 /** 게임은 항상 이 시각(아침)에서 시작한다 */
 export const GAME_START_HOUR = 9
-/** 실제 1분마다 게임 속 시간이 이만큼 흐른다 (24분이면 하루) */
-export const GAME_HOURS_PER_MINUTE = 6
+/** 실제 1분마다 게임 속 시간이 이만큼 흐른다 (1이면 24분에 하루) */
+export const GAME_HOURS_PER_MINUTE = 1
 
 export interface Sky {
   sky: Color

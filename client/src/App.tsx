@@ -7,12 +7,13 @@ import type { LatLng } from '@jikjwau/shared/types'
 import { project, unproject } from '@jikjwau/shared/geo'
 import { RoadScene } from './map/RoadScene'
 import { CameraGestures } from './map/CameraGestures'
-import { CAMERA_LIMITS, createCameraRig } from './map/cameraRig'
+import { createCameraRig } from './map/cameraRig'
 import { createScenePicker, hitsPin, pickGround } from './map/scenePicker'
 import type { DragHandlers } from './map/CameraGestures'
 import { useGame, type Spot } from './store/game'
 import { SetupPanel } from './ui/SetupPanel'
 import { Compass } from './ui/Compass'
+import { MapLoading } from './ui/MapLoading'
 import { GamePanel } from './ui/GamePanel'
 import { LobbyPanel } from './ui/LobbyPanel'
 import { PlaceSheet } from './ui/PlaceSheet'
@@ -90,17 +91,15 @@ export default function App() {
     useGame.getState().pickPoint(unproject(p, useGame.getState().start.latLng))
   }
 
-  // 고르는 창에서 정하면: 출발지는 그 주변을, 목적지는 출발지와 함께 보이게
-  const onPlaceChosen = (kind: 'start' | 'destination', spot: Spot) => {
-    if (kind === 'start') {
-      rig.following = true
-      rig.distance = START_VIEW_DISTANCE_M
-      return
-    }
-    const p = project(spot.latLng, useGame.getState().start.latLng)
-    rig.following = false
-    rig.focus.set(p.x / 2, 0, -p.y / 2)
-    rig.distance = Math.min(Math.max(Math.hypot(p.x, p.y) * 1.3, START_VIEW_DISTANCE_M), CAMERA_LIMITS.distance.max)
+  /** 지도를 새 곳으로 옮겼을 때 주변을 다 그릴 때까지 덮는 로딩 화면 (값은 매번 새로 띄우기 위한 번호) */
+  const [mapLoading, setMapLoading] = useState<number | null>(null)
+
+  // 고르는 창에서 정하면 늘 출발지 주변을 보여 준다. 목적지가 멀어도 멀리 축소하지 않는다
+  // (멀리 축소하면 타일이 많아 느리게 조각조각 그려져서). 출발지를 정하면 주변을 다 그릴 때까지 로딩 화면
+  const onPlaceChosen = (kind: 'start' | 'destination') => {
+    rig.following = true
+    rig.distance = START_VIEW_DISTANCE_M
+    if (kind === 'start') setMapLoading(Date.now())
   }
 
   // 핀을 잡고 끌면 손가락 아래 땅으로 핀을 옮긴다
@@ -135,6 +134,7 @@ export default function App() {
     const viewing = focusLatLng()
     useGame.getState().setStart(spot)
     lookAt(viewing)
+    setMapLoading(Date.now())
   }
 
   if (!fontsLoaded) return <View style={styles.fontWait} />
@@ -189,6 +189,7 @@ export default function App() {
             {inGame && (status === 'setup' ? <SetupPanel /> : status === 'lobby' ? <LobbyPanel /> : <GamePanel />)}
             {playing && <RoundOverlay />}
             {playing && <ArrivalCelebration rig={rig} />}
+            {inGame && mapLoading !== null && <MapLoading key={mapLoading} onDone={() => setMapLoading(null)} />}
           </View>
           {booted && screen === 'records' && <RecordsScreen />}
           {booted && screen === 'closet' && <ClosetScreen />}

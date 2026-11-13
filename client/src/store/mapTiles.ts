@@ -1,10 +1,10 @@
 import { create } from 'zustand'
 import type { LatLng, NodeId, Vec2 } from '@jikjwau/shared/types'
-import { MAP_DETAIL_RADIUS_M, MAP_UNLOAD_MARGIN_M, TILE_COORD_SCALE, TILES_PER_DEG } from '@jikjwau/shared/config'
+import { MAP_DETAIL_RADIUS_M, MAP_UNLOAD_MARGIN_M, TERRAIN_GRID, TILE_COORD_SCALE, TILES_PER_DEG } from '@jikjwau/shared/config'
 import { parseTileKey, project, tileCorner, tileFlatToLocal, tilesAround, unproject } from '@jikjwau/shared/geo'
 import { fetchRoadTile, fetchSceneryTile, fetchTerrainTile } from '../api/map'
 import { dropTerrain, putBeaches, putTerrain, putWater, seaWaterId, setSeaLevel, setTerrainOrigin } from '../map/terrain'
-import { inRegionKey } from '../map/region'
+import { inRegionKey, isAllSeaKey } from '../map/region'
 
 /**
  * 화면 중심 주변의 지도 타일(도로·건물·물)을 받아 두고, 멀리 벗어난 타일은 내린다.
@@ -40,7 +40,7 @@ interface MapTilesState {
   focus: (point: Vec2, radiusM: number, growDetail?: boolean, farRadiusM?: number) => void
 }
 
-const MAX_PARALLEL = 4
+const MAX_PARALLEL = 6
 /**
  * 받은 타일은 이 간격으로 하나씩 화면에 넣는다.
  * 타일마다 메시를 만드는 일이 한 프레임에 몰려 화면이 멈칫하지 않게 나눈다.
@@ -72,7 +72,13 @@ const TILE_UNITS = TILE_COORD_SCALE / TILES_PER_DEG
 async function loadTile(key: string, origin: LatLng, lite: boolean): Promise<MapTile> {
   const [row, col] = parseTileKey(key)
   const local = (flat: number[]) => tileFlatToLocal(flat, row, col, origin)
-  const [roads, scenery, terrain] = await Promise.all([lite ? null : fetchRoadTile(key), fetchSceneryTile(key), fetchTerrainTile(key)])
+  // 칸 전체가 바다면 땅 높이는 받지 않고 해수면으로 (서버가 고도 자료를 새로 받느라 느린 경우가 많다)
+  const allSea = isAllSeaKey(key)
+  const [roads, scenery, terrain] = await Promise.all([
+    lite ? null : fetchRoadTile(key),
+    fetchSceneryTile(key),
+    allSea ? { n: TERRAIN_GRID, heights: new Array<number>(TERRAIN_GRID * TERRAIN_GRID).fill(0) } : fetchTerrainTile(key),
+  ])
   // 메시를 만들 때 높이를 찾으므로 화면에 넣기 전에 둔다
   putTerrain(key, terrain.n, terrain.heights)
 
@@ -110,6 +116,17 @@ async function loadTile(key: string, origin: LatLng, lite: boolean): Promise<Map
     beaches,
     waterways: scenery?.waterways.map(([w, flat]) => [w, local(flat)]) ?? [],
   }
+}
+
+/**
+ * 아직 화면에 다 못 넣은 지도 일: 받을 차례·받는 중·받았지만 안 넣은 타일, 건물을 그릴 차례인 타일.
+ * 지도 로딩 화면이 0이 될 때까지 기다린다
+ */
+export function mapPendingCount() {
+  const { tiles } = useMapTiles.getState()
+  // 건물 차례 중 아직 안 받은(또는 영역 밖이라 영영 안 올) 타일은 세지 않는다
+  const details = detailQueue.filter((k) => tiles.get(k)?.lite === false).length
+  return queue.length + inFlight.size + arrived.length + details
 }
 
 export const useMapTiles = create<MapTilesState>((set, get) => {
@@ -193,8 +210,9 @@ export const useMapTiles = create<MapTilesState>((set, get) => {
       }
       queue = [
         ...nearKeys.filter((k) => want(k, false)).map((k): [string, boolean] => [k, false]),
+        // 먼 곳의 칸 전체 바다는 받지 않는다 (먼 바다 칠하기 FarSea가 그린다)
         ...(farRadiusM > radiusM ? tilesAround(center, farRadiusM) : [])
-          .filter((k) => !nearSet.has(k) && inRegionKey(k) && want(k, true))
+          .filter((k) => !nearSet.has(k) && inRegionKey(k) && !isAllSeaKey(k) && want(k, true))
           .map((k): [string, boolean] => [k, true]),
       ]
 

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber/native'
 import { Vector3, type Group } from 'three'
 import type { Outfit, Point, Seat } from '@jikjwau/shared/types'
-import { EMOTE_SHOW_MS, MOVE_SPEED_MPS, SEAT_DIRECTION } from '@jikjwau/shared/config'
+import { EMOTE_SHOW_MS, MOVE_SPEED_MPS, moveSpeedAt, SEAT_DIRECTION } from '@jikjwau/shared/config'
 import { activeEmotes, emoteAnchors } from '../store/social'
 import { DIRECTION_COLOR } from './ChoiceArrows'
 import { PERSON_HEIGHT, Person, type PersonHandle } from './Person'
@@ -72,7 +72,9 @@ export function Party({ position, route, onArrive, positionOut, mySeat, rig, out
   useFrame((_, delta) => {
     const moving = !!track && !arrived.current
     if (moving) {
-      traveled.current = Math.min(traveled.current + MOVE_SPEED_MPS * delta, track.total)
+      // 긴 길은 점점 빨라졌다가 다음 교차로 앞에서 다시 걷는다 (서버도 같은 속도로 시간을 잰다)
+      const speed = moveSpeedAt(traveled.current, track.total)
+      traveled.current = Math.min(traveled.current + speed * delta, track.total)
       const d = traveled.current
       let i = 1
       while (i < track.lengths.length - 1 && track.lengths[i] < d) i++
@@ -85,7 +87,8 @@ export function Party({ position, route, onArrive, positionOut, mySeat, rig, out
       positionOut.set(x, heightAt(x, y), -y)
       // 지금 걷는 구간 방향을 바라본다 (월드 -z가 북쪽)
       if (segLen > 0) heading.current = Math.atan2(-(b[0] - a[0]), b[1] - a[1])
-      phase.current += MOVE_SPEED_MPS * delta * STEP_PHASE_PER_M
+      // 다리 움직임은 기본 속도의 두 배까지만 빨라진다 (그 이상은 정신없어 보여서)
+      phase.current += Math.min(speed, MOVE_SPEED_MPS * 2) * delta * STEP_PHASE_PER_M
       if (d >= track.total) {
         arrived.current = true
         onArrive()

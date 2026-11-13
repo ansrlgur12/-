@@ -7,7 +7,7 @@ import { TILES_PER_DEG } from '@jikjwau/shared/config'
 import { parseTileKey, project, tileCorner, unproject } from '@jikjwau/shared/geo'
 import { useMapTiles } from '../store/mapTiles'
 import { terrainFloor, terrainGrid } from './terrain'
-import { forEachSeaTile } from './region'
+import { forEachSeaTile, regionReady } from './region'
 import { WATER_COLOR } from './WaterMesh'
 import type { CameraRig } from './cameraRig'
 
@@ -117,6 +117,15 @@ export function FarSea({ rig }: { rig: CameraRig }) {
   const origin = useMapTiles((s) => s.origin)
   const ref = useRef<Mesh>(null)
   const [center, setCenter] = useState<{ x: number; y: number } | null>(null)
+  // 영역 정보(바다 목록)가 지도보다 늦게 오면, 오는 대로 다시 만든다
+  const [regionLoaded, setRegionLoaded] = useState(false)
+  useEffect(() => {
+    let alive = true
+    regionReady.then(() => alive && setRegionLoaded(true))
+    return () => {
+      alive = false
+    }
+  }, [])
   useFrame(() => {
     const f = rig.focus
     if (!center || Math.hypot(f.x - center.x, -f.z - center.y) > FAR_SEA_REBUILD_M) setCenter({ x: f.x, y: -f.z })
@@ -144,7 +153,7 @@ export function FarSea({ rig }: { rig: CameraRig }) {
     g.setAttribute('normal', new BufferAttribute(normals, 3))
     g.computeBoundingSphere()
     return g
-  }, [origin, center])
+  }, [origin, center, regionLoaded])
   useEffect(() => () => geometry?.dispose(), [geometry])
   if (!geometry) return null
   return <mesh ref={ref} geometry={geometry} material={farSeaMaterial} />

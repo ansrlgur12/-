@@ -12,7 +12,7 @@ import { BORDER, FONT, INK, TEXT_STROKE } from './theme'
 /** 로딩 화면을 적어도 이만큼은 보여 준다 (타이틀이 나오고 막대가 차는 것까지) */
 const MIN_SHOW_MS = 2300
 
-const TIPS = [
+export const TIPS = [
   '갈림길마다 세 사람이 가위바위보!\n이긴 사람이 맡은 방향으로 가요',
   '파랑은 좌회전, 초록은 직진,\n빨강은 우회전을 맡아요',
   '첫 판에 모두 비기면\n왔던 길로 유턴해요',

@@ -2,7 +2,7 @@ import { Pressable, Share, StyleSheet, Text, View } from 'react-native'
 import type { Seat } from '@jikjwau/shared/types'
 import { SEAT_DIRECTION } from '@jikjwau/shared/config'
 import { useGame, useMySeat } from '../store/game'
-import { DIRECTION_ARROW, DIRECTION_LABEL, rulesLabel, seatColor, seatTint } from './labels'
+import { DIRECTION_LABEL, rulesLabel, seatColor, seatTint } from './labels'
 import { BlockBuddy } from './BlockBuddy'
 import { ProfileAvatar } from './ProfileAvatar'
 import { Icon } from './Icon'
@@ -93,7 +93,6 @@ export function LobbyPanel() {
                 </Text>
               </View>
               <View style={[styles.dirPill, { backgroundColor: color }]}>
-                <Text style={styles.dirArrow}>{DIRECTION_ARROW[dir]}</Text>
                 <Text style={styles.dirLabel}>{DIRECTION_LABEL[dir]}</Text>
               </View>
             </Pressable>
@@ -135,7 +134,6 @@ const styles = StyleSheet.create({
   empty: { color: '#94a3b8' },
   warn: { color: '#dc2626' },
   dirPill: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 12, paddingHorizontal: 12, height: 40, minWidth: 92 },
-  dirArrow: { fontFamily: FONT.body, color: '#fff', fontSize: 22 },
   dirLabel: { fontFamily: FONT.body, color: '#fff', fontSize: 16 },
   error: { color: '#dc2626', textAlign: 'center' },
   waiting: { fontFamily: FONT.body, textAlign: 'center', color: '#334155', paddingVertical: 4 },

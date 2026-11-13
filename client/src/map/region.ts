@@ -10,6 +10,10 @@ let rows: Map<number, number[]> | null = null
 /** 칸 전체가 바다인 타일 (줄 → [시작 열, 끝 열, ...]) */
 let seaRows: Map<number, number[]> = new Map()
 
+let markReady: () => void = () => undefined
+/** 영역 정보를 받았을 때(또는 못 받고 포기했을 때) 풀린다. 지도가 영역보다 먼저 그려질 수 있어서 */
+export const regionReady = new Promise<void>((resolve) => (markReady = resolve))
+
 /** 앱을 켤 때 한 번 */
 export async function loadRegion() {
   try {
@@ -20,8 +24,19 @@ export async function loadRegion() {
     }
   } catch {
     // 못 받으면 제한 없이
+  } finally {
+    markReady()
   }
 }
+
+/** 칸 전체가 바다인 타일인지 */
+export function isAllSea(row: number, col: number) {
+  const runs = seaRows.get(row)
+  if (!runs) return false
+  for (let i = 0; i < runs.length; i += 2) if (col >= runs[i] && col <= runs[i + 1]) return true
+  return false
+}
+export const isAllSeaKey = (key: string) => isAllSea(...parseTileKey(key))
 
 function inRegionTile(row: number, col: number) {
   if (!rows) return true

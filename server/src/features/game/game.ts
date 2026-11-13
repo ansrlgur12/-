@@ -12,7 +12,7 @@ import type {
   SeatController,
   Vec2,
 } from '@jikjwau/shared/types'
-import { MOVE_SPEED_MPS, RPS_RESULT_SHOW_MS, RPS_TIMEOUT_MS, SEAT_DIRECTION } from '@jikjwau/shared/config'
+import { moveDurationMs, RPS_RESULT_SHOW_MS, RPS_TIMEOUT_MS, SEAT_DIRECTION } from '@jikjwau/shared/config'
 import { HttpError } from '../../common/http-error'
 import { canonicalNode, type RoadGraph } from '../road/graph'
 import { distance } from '../road/geo'
@@ -424,7 +424,7 @@ export class Game {
 /** 앱이 이벤트를 연출하는 데 걸리는 시간 (서버와 앱이 같은 상수를 쓴다) */
 export function playbackMs(events: GameEvent[]): number {
   let ms = 0
-  for (const e of events) ms += e.type === 'move' ? (e.distanceM / MOVE_SPEED_MPS) * 1000 : RPS_RESULT_SHOW_MS
+  for (const e of events) ms += e.type === 'move' ? moveDurationMs(e.distanceM) : RPS_RESULT_SHOW_MS
   return Math.round(ms)
 }
 

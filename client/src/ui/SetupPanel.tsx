@@ -131,7 +131,7 @@ export function SetupPanel() {
     <View style={[styles.panel, { marginBottom: -insets.bottom, paddingBottom: 12 + insets.bottom }]}>
       <View style={styles.head}>
         <Pressable style={({ pressed }) => [styles.pill, styles.backPill, pressed && styles.pillPressed]} onPress={() => (playEffect('tap'), setScreen('menu'))} hitSlop={6}>
-          <Text style={styles.backText}>← 메뉴로 돌아가기</Text>
+          <Text style={styles.backText}>메뉴로 돌아가기</Text>
         </Pressable>
         {plan && (
           <View style={[styles.pill, styles.modePill, plan.rules.mode === 'hardcore' && styles.modeHard]}>

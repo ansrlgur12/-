@@ -7,7 +7,7 @@ import { useGame, useMySeat } from '../store/game'
 import { useNow } from './useNow'
 import { useSeatName } from './useSeatName'
 import { Icon, type IconName } from './Icon'
-import { DIRECTION_ARROW, DIRECTION_LABEL, HAND_ICON, HAND_NAME, formatDistance, formatDuration, rulesLabel, seatColor } from './labels'
+import { DIRECTION_LABEL, HAND_ICON, HAND_NAME, formatDistance, formatDuration, rulesLabel, seatColor } from './labels'
 import { GameButton } from './GameButton'
 import { BORDER, FONT, INK, LIP } from './theme'
 
@@ -31,13 +31,13 @@ function moveText(e: Extract<GameEvent, { type: 'move' }>) {
     case 'start':
       return '출발! 첫 교차로까지 걸어가요'
     case 'win':
-      return `${DIRECTION_ARROW[e.direction!]} ${DIRECTION_LABEL[e.direction!]} 하는 중`
+      return `${DIRECTION_LABEL[e.direction!]} 하는 중`
     case 'uturn':
       return '유턴하는 중'
     case 'deadEnd':
       return '막다른 길이라 돌아가는 중'
     case 'only':
-      return e.direction ? `외길이라 ${DIRECTION_ARROW[e.direction]} ${DIRECTION_LABEL[e.direction]} 하는 중` : '외길이라 그대로 가는 중'
+      return e.direction ? `외길이라 ${DIRECTION_LABEL[e.direction]} 하는 중` : '외길이라 그대로 가는 중'
   }
 }
 
@@ -159,7 +159,7 @@ export function GamePanel() {
         <View style={styles.roundHead}>
           {myTurn ? (
             <Text style={styles.roundTitle}>
-              {rps.rematch ? '재경기! ' : ''}이기면 <Text style={{ color: seatColor(mine) }}>{DIRECTION_ARROW[myDirection]} {DIRECTION_LABEL[myDirection]}</Text>
+              {rps.rematch ? '재경기! ' : ''}이기면 <Text style={{ color: seatColor(mine) }}>{DIRECTION_LABEL[myDirection]}</Text>
             </Text>
           ) : (
             <Text style={styles.roundTitleSmall}>이번 판은 내 방향이 없어요 · 구경 중</Text>

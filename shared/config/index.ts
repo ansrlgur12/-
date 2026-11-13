@@ -70,8 +70,32 @@ export const MAP_DETAIL_MAX_CAMERA_DISTANCE_M = 1400
  */
 export const MAP_FAR_RADIUS_MAX_M = 6000
 
-/** 게임 화면에서 일행이 움직이는 속도. 서버도 이 값으로 연출 시간을 계산해 가위바위보 마감을 늦춘다 */
+/** 게임 화면에서 일행이 걷는 기본 속도. 서버도 같은 계산(moveDurationMs)으로 연출 시간을 재 가위바위보 마감을 늦춘다 */
 export const MOVE_SPEED_MPS = 40
+/**
+ * 긴 길(대교 등)은 달린다: 한 번 움직일 때 처음 MOVE_CRUISE_M은 기본 속도로 걷고, 그다음 점점 빨라져 최대 MOVE_MAX_SPEED_MPS.
+ * 끝(다음 교차로)까지 MOVE_CRUISE_M 남으면 다시 기본 속도로 줄어든다. 짧은 길(2 × MOVE_CRUISE_M 이하)은 그대로
+ */
+export const MOVE_CRUISE_M = 200
+export const MOVE_MAX_SPEED_MPS = 400
+/** 빨라지고 느려지는 정도 (m/s²) */
+export const MOVE_ACCEL_MPS2 = 60
+
+/** 한 번 움직이는 길(total m) 중 traveled m 지점의 속도 (m/s) */
+export function moveSpeedAt(traveled: number, total: number): number {
+  const ramp = (d: number) => (d <= MOVE_CRUISE_M ? MOVE_SPEED_MPS : Math.sqrt(MOVE_SPEED_MPS ** 2 + 2 * MOVE_ACCEL_MPS2 * (d - MOVE_CRUISE_M)))
+  return Math.min(MOVE_MAX_SPEED_MPS, ramp(traveled), ramp(total - traveled))
+}
+
+/** total m를 움직이는 데 걸리는 시간 (ms). 앱의 걷는 연출과 같은 속도로 잰다 */
+export function moveDurationMs(total: number): number {
+  if (total <= 2 * MOVE_CRUISE_M) return (total / MOVE_SPEED_MPS) * 1000
+  const steps = 400
+  const h = total / steps
+  let s = 0
+  for (let i = 0; i < steps; i++) s += h / moveSpeedAt((i + 0.5) * h, total)
+  return s * 1000
+}
 /** 결과 창에서 "가위! 바위! 보!"를 한 단어씩 외치는 시간. 그다음 낸 손을 공개한다 */
 export const RPS_CHANT_MS = 1350
 /** 가위바위보 결과를 보여 주는 시간 (외치기 + 공개) */

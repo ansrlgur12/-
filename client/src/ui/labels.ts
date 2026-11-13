@@ -6,8 +6,6 @@ import type { IconName } from './Icon'
 export const DIRECTION_LABEL: Record<Direction, string> = { left: '좌회전', straight: '직진', right: '우회전' }
 export const HAND_ICON: Record<Hand, IconName> = { rock: 'rock', paper: 'paper', scissors: 'scissors' }
 export const HAND_NAME: Record<Hand, string> = { rock: '바위', paper: '보', scissors: '가위' }
-/** 방향 화살표 (크게 보여 줄 때) */
-export const DIRECTION_ARROW: Record<Direction, string> = { left: '←', straight: '↑', right: '→' }
 
 export const seatColor = (seat: Seat) => DIRECTION_COLOR[SEAT_DIRECTION[seat]]
 /** 방향 색을 아주 옅게 (이긴 카드 바탕 등) */

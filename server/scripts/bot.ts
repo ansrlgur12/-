@@ -10,7 +10,7 @@
 import { randomUUID } from 'node:crypto'
 import { io, type Socket } from 'socket.io-client'
 import type { ClientToServerEvents, GameEvent, GameUpdate, Hand, RoomJoined, ServerToClientEvents, AckResult } from '@jikjwau/shared/types'
-import { MOVE_SPEED_MPS, RPS_RESULT_SHOW_MS } from '@jikjwau/shared/config'
+import { moveDurationMs, RPS_RESULT_SHOW_MS } from '@jikjwau/shared/config'
 
 const args = process.argv.slice(2)
 const flag = (name: string, fallback: string) => {
@@ -32,7 +32,7 @@ if (!create && !code) {
 const HANDS: Hand[] = ['rock', 'paper', 'scissors']
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const playback = (events: GameEvent[]) =>
-  events.reduce((ms, e) => ms + (e.type === 'move' ? (e.distanceM / MOVE_SPEED_MPS) * 1000 : RPS_RESULT_SHOW_MS), 0)
+  events.reduce((ms, e) => ms + (e.type === 'move' ? moveDurationMs(e.distanceM) : RPS_RESULT_SHOW_MS), 0)
 
 type BotSocket = Socket<ServerToClientEvents, ClientToServerEvents>
 

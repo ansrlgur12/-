@@ -2,6 +2,7 @@ import type { LatLng, PlaceResult } from '@jikjwau/shared/types'
 import { fetchJson, USER_AGENT, waitNominatim } from './place.service'
 
 const KAKAO = 'https://dapi.kakao.com/v2/local'
+const NO_NAME = '이름 없는 곳'
 const NOMINATIM_REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse'
 
 /**
@@ -70,7 +71,23 @@ async function reverseKakao(at: LatLng, key: string): Promise<PlaceResult> {
   if (shop) return of(shop)
   // 도로명 주소의 "서울 마포구 월드컵로 83" → "월드컵로 83"
   const short = (doc?.road_address?.address_name ?? doc?.address?.address_name ?? '').split(' ').slice(-2).join(' ')
-  return { ...at, name: short || '이름 없는 곳', address }
+  if (short) return { ...at, name: short, address }
+  // 바다 위 대교처럼 카카오에 주소가 없는 곳: OSM은 다리·도로 자체 이름(예: 인천대교)을 안다
+  const osm = await reverseNominatim(at).catch(() => null)
+  if (osm && osm.name !== NO_NAME) return osm
+  // 그래도 없으면 행정 구역 이름으로
+  const region = await regionName(at, key).catch(() => '')
+  return { ...at, name: region ? `${region} 근처` : NO_NAME, address: region }
+}
+
+/** 그 지점의 행정 구역 (예: "인천 중구"). 바다 위여도 가까운 구역을 준다 */
+async function regionName(at: LatLng, key: string): Promise<string> {
+  const params = new URLSearchParams({ x: String(at.lng), y: String(at.lat) })
+  const json = (await fetchJson(`${KAKAO}/geo/coord2regioncode.json?${params}`, { Authorization: `KakaoAK ${key}` })) as {
+    documents: Array<{ region_type: string; region_1depth_name: string; region_2depth_name: string }>
+  }
+  const doc = json.documents.find((d) => d.region_type === 'H') ?? json.documents[0]
+  return doc ? [doc.region_1depth_name, doc.region_2depth_name].filter(Boolean).join(' ') : ''
 }
 
 interface NominatimReverse {
@@ -87,7 +104,7 @@ async function reverseNominatim(at: LatLng): Promise<PlaceResult> {
   const road = [a.road, a.house_number].filter(Boolean).join(' ')
   const area = a.quarter || a.neighbourhood || a.suburb || a.borough || a.city || ''
   const address = [a.city, a.borough, area !== a.borough ? area : '', road].filter(Boolean).join(' ')
-  return { ...at, name: r.name || road || (area ? `${area} 근처` : '이름 없는 곳'), address }
+  return { ...at, name: r.name || road || (area ? `${area} 근처` : NO_NAME), address }
 }
 
 /** 지점의 이름과 주소. 카카오 키가 있으면 카카오, 없으면 OSM Nominatim */

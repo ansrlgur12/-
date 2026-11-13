@@ -8,7 +8,7 @@ import { hapticImpact, hapticResult } from '../lib/haptics'
 import { useGame, useMySeat } from '../store/game'
 import { Confetti } from './Confetti'
 import { Icon, type IconName } from './Icon'
-import { DIRECTION_ARROW, DIRECTION_LABEL, HAND_ICON, HAND_NAME, UTURN_COLOR, seatColor, seatPastel, seatTint } from './labels'
+import { DIRECTION_LABEL, HAND_ICON, HAND_NAME, UTURN_COLOR, seatColor, seatPastel, seatTint } from './labels'
 import { useSeatName } from './useSeatName'
 import { OutlinedText } from './OutlinedText'
 import { BORDER, FONT, INK, TEXT_STROKE } from './theme'
@@ -97,12 +97,12 @@ function ResultModal({ result }: { result: RpsRoundResult }) {
 
   // 어디로 가는지: 한 명이 이기면 그 방향, 둘이 이기면 한 판 더, 비기면 다시 또는 유턴
   const go = single
-    ? { arrow: DIRECTION_ARROW[SEAT_DIRECTION[single]], label: DIRECTION_LABEL[SEAT_DIRECTION[single]], color: seatColor(single) }
+    ? { label: DIRECTION_LABEL[SEAT_DIRECTION[single]], color: seatColor(single) }
     : result.winners.length === 2
-      ? { arrow: null, label: '둘이서 한 판 더!', color: '#e3a347' }
+      ? { label: '둘이서 한 판 더!', color: '#e3a347' }
       : result.rematch
-        ? { arrow: null, label: '다시 한 판!', color: '#56618f' }
-        : { arrow: null, label: '유턴', color: UTURN }
+        ? { label: '다시 한 판!', color: '#56618f' }
+        : { label: '유턴', color: UTURN }
 
   const shown = (v: Animated.Value, from: number) => ({
     opacity: v.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, 1, 1] }),
@@ -167,7 +167,6 @@ function ResultModal({ result }: { result: RpsRoundResult }) {
 
         {/* 공개 전에도 자리를 잡아 둬서 창 크기가 변하지 않게 */}
         <Animated.View style={[styles.go, { backgroundColor: go.color }, revealed ? shown(reveal, 0.5) : styles.hidden]}>
-          {go.arrow && <Text style={styles.goArrow}>{go.arrow}</Text>}
           <Text style={styles.goLabel}>{go.label}</Text>
         </Animated.View>
         <Text style={[styles.note, !revealed && styles.hidden]}>
@@ -190,13 +189,13 @@ function moveBanner(e: Extract<GameEvent, { type: 'move' }>): { icon?: IconName;
     case 'start':
       return { text: '출발!', color: '#56618f' }
     case 'win':
-      return { text: `${DIRECTION_ARROW[dir!]} ${DIRECTION_LABEL[dir!]} 중`, color }
+      return { text: `${DIRECTION_LABEL[dir!]} 중`, color }
     case 'uturn':
       return { text: '유턴 중', color: UTURN }
     case 'deadEnd':
       return { text: '막다른 길! 돌아가요', color: UTURN }
     case 'only':
-      return { text: dir ? `${DIRECTION_ARROW[dir]} 외길이라 ${DIRECTION_LABEL[dir]}` : '외길이라 그대로', color }
+      return { text: dir ? `외길이라 ${DIRECTION_LABEL[dir]}` : '외길이라 그대로', color }
   }
 }
 
@@ -260,7 +259,6 @@ const styles = StyleSheet.create({
   me: { color: '#4a78c9' },
   handDir: { fontFamily: FONT.button, fontSize: 14, marginTop: 2 },
   go: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 18, paddingVertical: 10, paddingHorizontal: 22 },
-  goArrow: { fontFamily: FONT.body, fontSize: 44, color: '#fff' },
   goLabel: { fontFamily: FONT.body, fontSize: 36, color: '#fff' },
   hidden: { opacity: 0 },
   note: { fontFamily: FONT.body, fontSize: 13, color: '#475569' },
