@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { Animated, StyleSheet, Text } from 'react-native'
 import { toScreen, type ScenePicker } from '../map/scenePicker'
+import { FONT } from './theme'
 
 const WIDTH = 190
 /** 핀 꼭대기에서 이만큼 위 (px) */
@@ -45,6 +46,6 @@ export function PinTooltip({ picker, hidden }: { picker: ScenePicker; hidden: bo
 const styles = StyleSheet.create({
   // 말풍선 아래 끝이 (x, y)에 오도록 위로 올린다
   wrap: { position: 'absolute', left: 0, top: 0, width: WIDTH, alignItems: 'center', marginTop: -44 },
-  bubble: { backgroundColor: 'rgba(17,24,39,0.88)', color: '#fff', fontSize: 12, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, overflow: 'hidden' },
-  tail: { color: 'rgba(17,24,39,0.88)', fontSize: 10, marginTop: -3 },
+  bubble: { fontFamily: FONT.body, backgroundColor: 'rgba(17,24,39,0.88)', color: '#fff', fontSize: 12, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, overflow: 'hidden' },
+  tail: { fontFamily: FONT.body, color: 'rgba(17,24,39,0.88)', fontSize: 10, marginTop: -3 },
 })

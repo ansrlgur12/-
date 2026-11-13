@@ -5,6 +5,7 @@ import type { EmoteId } from '@jikjwau/shared/types'
 import { socket } from '../api/socket'
 import { playEffect } from '../lib/sound'
 import { EmojiIcon, Icon } from './Icon'
+import { FONT } from './theme'
 
 /** 지도 오른쪽 웃는 얼굴 버튼. 누르면 이모티콘을 고르고, 내 캐릭터가 그 동작을 한다 */
 export function EmoteBar({ top }: { top: number }) {
@@ -56,5 +57,5 @@ const styles = StyleSheet.create({
   item: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
   button: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.92)', alignItems: 'center', justifyContent: 'center' },
   buttonOn: { backgroundColor: '#fde68a' },
-  emoji: { fontSize: 24 },
+  emoji: { fontFamily: FONT.body, fontSize: 24 },
 })

@@ -63,8 +63,8 @@ export function DayNight() {
 
   return (
     <>
-      <ambientLight ref={ambient} intensity={0.75} />
-      <directionalLight ref={sun} position={[120, 300, 180]} intensity={1.3} />
+      <ambientLight ref={ambient} intensity={0.9} />
+      <directionalLight ref={sun} position={[120, 300, 180]} intensity={1.1} />
     </>
   )
 }

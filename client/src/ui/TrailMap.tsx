@@ -6,6 +6,7 @@ import { parseTileKey, tileFlatToLocal, tileKey, tileRowCol, unproject } from '@
 import { fetchRoadTile, fetchSceneryTile } from '../api/map'
 import { classify, type RoadClass } from '../map/RoadMesh'
 import { Icon } from './Icon'
+import { FONT } from './theme'
 
 interface Props {
   trail: Point[]
@@ -266,9 +267,9 @@ export function TrailMap({ trail, target, origin, width, height, arrived }: Prop
 
 const styles = StyleSheet.create({
   box: { backgroundColor: MAP.land, borderRadius: 16, overflow: 'hidden' },
-  loading: { position: 'absolute', top: 10, left: 12, fontSize: 12, color: '#64748b' },
+  loading: { fontFamily: FONT.body, position: 'absolute', top: 10, left: 12, fontSize: 12, color: '#64748b' },
   arrivedBadge: { position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 },
-  arrivedText: { fontWeight: '900', color: '#e11d48' },
+  arrivedText: { fontFamily: FONT.body, color: '#e11d48' },
   replay: { position: 'absolute', right: 10, bottom: 10, backgroundColor: '#0f172a', borderRadius: 12, paddingHorizontal: 16, height: 42, justifyContent: 'center' },
-  replayText: { color: '#fff', fontWeight: '900', fontSize: 15 },
+  replayText: { fontFamily: FONT.body, color: '#fff', fontSize: 15 },
 })

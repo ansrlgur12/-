@@ -20,7 +20,13 @@ export interface RoadTile {
  * rows: [행, 시작 열, 끝 열, 시작 열, 끝 열, ...] (끝 열 포함)
  */
 export interface MapRegion {
+  /** 줄마다 [행, 시작 열, 끝 열, 시작 열, 끝 열, ...] */
   rows: number[][]
+  /**
+   * 칸 전체가 바다인 타일 (rows와 같은 형식). 타일을 받기 전에도 멀리 보이는 바다를 미리 칠해 둔다.
+   * 예전 타일이면 없다
+   */
+  sea?: number[][]
 }
 
 /** 타일 하나의 풍경 */
@@ -34,6 +40,13 @@ export interface SceneryTile {
   water: Array<[number, number[][]]>
   /** 면이 없는 하천: [폭(m), 선] */
   waterways: Array<[number, number[]]>
+  /**
+   * 바다 (OSM 해안선을 타일로 자른 면): [바깥 고리, ...구멍(섬)] 목록. 좌표는 water와 같다.
+   * 1이면 칸 전체가 바다, 없으면 바다 없음
+   */
+  sea?: number[][][] | 1
+  /** 모래사장 (natural=beach): water와 같은 형식 [id, [바깥 고리, ...구멍]] */
+  beaches?: Array<[number, number[][]]>
 }
 
 /** 타일 한 칸의 땅 높이. 남쪽 줄부터 줄마다 서→동, n×n 점 (가장자리는 이웃 타일과 같은 값) */

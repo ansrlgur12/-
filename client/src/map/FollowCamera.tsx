@@ -31,6 +31,7 @@ export function FollowCamera({ target, rig }: Props) {
     const c = current.current
     c.distance += (rig.distance - c.distance) * t
     c.yaw += (rig.yaw - c.yaw) * t
+    rig.viewYaw = c.yaw
     c.pitch += (rig.pitch - c.pitch) * t
     if (rig.following) {
       rig.focus.copy(target)

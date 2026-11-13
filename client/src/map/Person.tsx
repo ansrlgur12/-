@@ -285,12 +285,13 @@ function Accessory({ id, capeRef }: { id: string; capeRef: RefObject<Group | nul
       )
     case 'cape':
       return (
-        <group ref={capeRef} position={[0, neck - 0.1, back + 0.05]}>
+        // 등에서 조금 떨어뜨려 걸고(어깨·팔과 겹치지 않게 폭도 어깨 너비), 아래로 갈수록 뒤로 벌어진다
+        <group ref={capeRef} position={[0, neck - 0.1, back + 0.14]} rotation={[-0.16, 0, 0]}>
           <mesh position={[0, -1.4, 0]}>
-            <planeGeometry args={[BODY_W + 0.3, 2.8]} />
+            <planeGeometry args={[BODY_W + 0.2, 2.8]} />
             <CapeMat color={color} />
           </mesh>
-          <Box color={accent} size={[BODY_W, 0.2, 0.15]} position={[0, 0, -0.05]} />
+          <Box color={accent} size={[BODY_W + 0.1, 0.22, 0.3]} position={[0, 0, -0.1]} />
         </group>
       )
     default:
@@ -413,8 +414,9 @@ export const Person = forwardRef<PersonHandle, { outfit: Outfit; mine?: boolean;
         body.current.position.y = pose.y
         body.current.rotation.z = pose.tilt
       }
-      // 걸을 때 망토가 뒤로 날린다
-      if (cape.current) cape.current.rotation.x = 0.12 + amount * 0.45 + Math.sin(phase * 2) * 0.06 * amount
+      // 걸을 때 망토가 뒤로 날린다. 뒤는 +z라서 아래 끝이 뒤로 가려면 x축으로 음수만큼 돈다
+      // (양수면 망토 끝이 몸 안으로 파고든다)
+      if (cape.current) cape.current.rotation.x = -(0.16 + amount * 0.45 + Math.sin(phase * 2) * 0.06 * amount)
     },
   }))
 

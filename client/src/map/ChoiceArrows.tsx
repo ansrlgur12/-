@@ -4,9 +4,9 @@ import type { Direction, Point } from '@jikjwau/shared/types'
 import { heightAt } from './terrain'
 
 export const DIRECTION_COLOR: Record<Direction, string> = {
-  left: '#3b82f6',
-  straight: '#22c55e',
-  right: '#ef4444',
+  left: '#6b9cf0',
+  straight: '#4fbd7c',
+  right: '#ec7b75',
 }
 
 const ARROW_DISTANCE_M = 14

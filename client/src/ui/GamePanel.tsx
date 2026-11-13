@@ -1,3 +1,4 @@
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { hapticTap } from '../lib/haptics'
 import type { GameEvent, Hand } from '@jikjwau/shared/types'
@@ -7,17 +8,22 @@ import { useNow } from './useNow'
 import { useSeatName } from './useSeatName'
 import { Icon, type IconName } from './Icon'
 import { DIRECTION_ARROW, DIRECTION_LABEL, HAND_ICON, HAND_NAME, formatDistance, formatDuration, rulesLabel, seatColor } from './labels'
+import { GameButton } from './GameButton'
+import { BORDER, FONT, INK, LIP } from './theme'
 
 /**
  * 패널 높이. 상태(가위바위보·이동·결과)에 따라 내용이 바뀌어도 높이는 그대로라 지도가 흔들리지 않는다.
  * 가장 큰 내용(가위바위보 버튼)이 들어가는 높이. 나가기·설정은 지도 오른쪽 위 메뉴(GameMenu)에
  */
-const PANEL_HEIGHT = 250
+const PANEL_HEIGHT = 290
+/** 위 모서리 둥글기. 그만큼 지도 위로 겹친다 */
+const RADIUS = 26
 
-const HANDS: Array<{ hand: Hand; color: string }> = [
-  { hand: 'scissors', color: '#fef3c7' },
-  { hand: 'rock', color: '#fee2e2' },
-  { hand: 'paper', color: '#dbeafe' },
+/** 손 버튼: 방향 색과 같은 파랑·초록·빨강 (파스텔 바탕 + 같은 색 테두리) */
+const HANDS: Array<{ hand: Hand; color: string; line: string }> = [
+  { hand: 'scissors', color: '#dfe9ff', line: '#6b9cf0' },
+  { hand: 'rock', color: '#dcf3e4', line: '#4fbd7c' },
+  { hand: 'paper', color: '#fde3e1', line: '#ec7b75' },
 ]
 
 function moveText(e: Extract<GameEvent, { type: 'move' }>) {
@@ -27,19 +33,25 @@ function moveText(e: Extract<GameEvent, { type: 'move' }>) {
     case 'win':
       return `${DIRECTION_ARROW[e.direction!]} ${DIRECTION_LABEL[e.direction!]} 하는 중`
     case 'uturn':
-      return '↩ 유턴하는 중'
+      return '유턴하는 중'
     case 'deadEnd':
-      return '↩ 막다른 길이라 돌아가는 중'
+      return '막다른 길이라 돌아가는 중'
     case 'only':
       return e.direction ? `외길이라 ${DIRECTION_ARROW[e.direction]} ${DIRECTION_LABEL[e.direction]} 하는 중` : '외길이라 그대로 가는 중'
   }
 }
 
-function Stat({ icon, text }: { icon: IconName; text: string }) {
+/** 기록 한 칸: 그림과 값, 아래에 작은 이름 */
+function Stat({ icon, text, label }: { icon: IconName; text: string; label: string }) {
   return (
     <View style={styles.stat}>
-      <Icon name={icon} size={18} />
-      <Text style={styles.statText}>{text}</Text>
+      <View style={styles.statTop}>
+        <Icon name={icon} size={18} />
+        <Text style={styles.statText} numberOfLines={1} adjustsFontSizeToFit>
+          {text}
+        </Text>
+      </View>
+      <Text style={styles.statLabel}>{label}</Text>
     </View>
   )
 }
@@ -51,6 +63,7 @@ export function GamePanel() {
   const mine = useMySeat()
   const name = useSeatName()
   const now = useNow(250, status === 'playing')
+  const insets = useSafeAreaInsets()
   if (!game || !mine) return null
 
   const rps = !current && status === 'playing' ? snapshot?.rps : null
@@ -93,17 +106,16 @@ export function GamePanel() {
           </View>
         ) : (
           <>
-            <View style={styles.iconRow}>
-              <Icon name={limit?.kind === 'time' ? 'alarm' : 'rock'} size={30} />
-              <Text style={styles.ended}>{limit?.kind === 'time' ? '시간이 다 됐어요' : '가위바위보 횟수를 다 썼어요'}</Text>
-            </View>
-            <Text style={styles.line}>목적지까지 {formatDistance(snapshot?.stats.remainingM ?? Math.hypot(dx, dy))} 남기고 끝났어요</Text>
+            <Text style={styles.failed}>실패</Text>
+            <Text style={styles.endLine}>
+              {limit?.kind === 'rps' ? '가위바위보 횟수를 다 썼어요' : '시간이 다 됐어요'} · 목적지까지 {formatDistance(snapshot?.stats.remainingM ?? Math.hypot(dx, dy))} 남았어요
+            </Text>
           </>
         )}
-        {room?.recordId && (
+        {room?.recordId && arrived && hardcore && (
           <View style={styles.iconRow}>
-            {arrived && hardcore && <Icon name="trophy" size={20} />}
-            <Text style={styles.saved}>{arrived && hardcore ? '오늘의 월드레코드에 올랐어요! 기록실에서 확인해 보세요' : '기록실에 저장했어요'}</Text>
+            <Icon name="trophy" size={20} />
+            <Text style={styles.saved}>오늘의 월드레코드에 올랐어요! 기록실에서 확인해 보세요</Text>
           </View>
         )}
         {playerId && room?.rewards[playerId] ? (
@@ -113,19 +125,11 @@ export function GamePanel() {
           </View>
         ) : null}
         <View style={styles.endActions}>
-          {room?.solo && (
-            <Pressable style={[styles.endButton, styles.endMain]} disabled={busy} onPress={restartSolo}>
-              <Text style={styles.endMainText}>{busy ? '길을 불러오는 중…' : '같은 코스로 다시'}</Text>
-            </Pressable>
-          )}
-          {!room?.solo && isHost && (
-            <Pressable style={[styles.endButton, styles.endMain]} disabled={busy} onPress={resetGame}>
-              <Text style={styles.endMainText}>대기실로</Text>
-            </Pressable>
-          )}
-          <Pressable style={styles.endButton} onPress={leaveRoom}>
-            <Text style={styles.endText}>{room?.solo ? '메뉴로' : '방 나가기'}</Text>
-          </Pressable>
+          {/* 실패하면 메뉴로 돌아가기만 */}
+          {!arrived && <GameButton label="메뉴로 돌아가기" color="white" size="md" style={styles.endButton} onPress={leaveRoom} />}
+          {arrived && room?.solo && <GameButton label={busy ? '불러오는 중…' : '같은 코스로 다시'} color="yellow" size="sm" disabled={busy} onPress={restartSolo} />}
+          {arrived && !room?.solo && isHost && <GameButton label="대기실로" color="yellow" size="sm" disabled={busy} onPress={resetGame} />}
+          {arrived && <GameButton label={room?.solo ? '메뉴로' : '방 나가기'} color="white" size="sm" onPress={leaveRoom} />}
         </View>
       </View>
     )
@@ -167,10 +171,10 @@ export function GamePanel() {
         </View>
         {inRound && !submitted ? (
           <View style={styles.hands}>
-            {HANDS.map(({ hand, color }) => (
+            {HANDS.map(({ hand, color, line }) => (
               <Pressable
                 key={hand}
-                style={({ pressed }) => [styles.handButton, { backgroundColor: color }, pressed && styles.pressed, busy && styles.disabled]}
+                style={({ pressed }) => [styles.handButton, { backgroundColor: color, borderColor: line }, pressed && styles.pressed, busy && styles.disabled]}
                 disabled={busy}
                 onPress={() => pick(hand)}
               >
@@ -198,21 +202,34 @@ export function GamePanel() {
     )
   }
 
+  const limitWarn = limit?.kind === 'time' ? elapsed > limit.minutes * 60_000 - 60_000 : !!limit && limit.count - rpsCount <= 3
+
   return (
-    <View style={styles.panel}>
-      <View style={styles.statsRow}>
-        {rules && <Text style={[styles.badge, hardcore && styles.badgeHard]}>{rulesLabel(rules)}</Text>}
-        <Stat icon="rock" text={`${rpsCount}`} />
-        <Stat icon="walking" text={formatDistance(distanceM)} />
-        <Stat icon="flag" text={formatDistance(Math.hypot(dx, dy))} />
-        <Stat icon="stopwatch" text={formatDuration(elapsed)} />
+    // 준비 패널처럼 둥근 위 모서리만큼 지도 위로 겹치고, 아래는 홈 바 영역까지 패널 색으로 채운다
+    <View style={[styles.panel, { height: PANEL_HEIGHT + insets.bottom, marginBottom: -insets.bottom, paddingBottom: 10 + insets.bottom }]}>
+      {/* 위 줄: 왼쪽 규칙, 오른쪽 남은 시간·횟수 */}
+      <View style={styles.headRow}>
+        {rules && (
+          <View style={[styles.pill, styles.modePill, hardcore && styles.modeHard]}>
+            <Icon name="gamepad" size={18} />
+            <Text style={[styles.pillText, hardcore && styles.modeTextHard]} numberOfLines={1}>
+              {rulesLabel(rules)}
+            </Text>
+          </View>
+        )}
+        {limitLeft && status === 'playing' && (
+          <View style={[styles.pill, styles.leftPill, limitWarn && styles.leftWarn]}>
+            <Icon name={limit?.kind === 'time' ? 'hourglass' : 'rock'} size={18} />
+            <Text style={[styles.pillText, styles.leftText, limitWarn && styles.warn]}>{limitLeft}</Text>
+          </View>
+        )}
       </View>
-      {limitLeft && status === 'playing' && (
-        <View style={styles.iconRow}>
-          <Icon name={limit?.kind === 'time' ? 'hourglass' : 'rock'} size={18} />
-          <Text style={[styles.limitLeft, limit?.kind === 'time' && elapsed > limit.minutes * 60_000 - 60_000 && styles.warn]}>{limitLeft}</Text>
-        </View>
-      )}
+      <View style={styles.statsRow}>
+        <Stat icon="rock" text={`${rpsCount}판`} label="가위바위보" />
+        <Stat icon="walking" text={formatDistance(distanceM)} label="걸은 거리" />
+        <Stat icon="flag" text={formatDistance(Math.hypot(dx, dy))} label="남은 거리" />
+        <Stat icon="stopwatch" text={formatDuration(elapsed)} label="걸린 시간" />
+      </View>
 
       <View style={styles.body}>{body}</View>
 
@@ -226,47 +243,65 @@ export function GamePanel() {
 }
 
 const styles = StyleSheet.create({
-  panel: { height: PANEL_HEIGHT, paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, gap: 6, borderTopWidth: 1, borderTopColor: '#e5e7eb', backgroundColor: '#fff' },
-  statsRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  stat: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, backgroundColor: '#f1f5f9', borderRadius: 8, paddingVertical: 5 },
-  statText: { color: '#0f172a', fontWeight: '800', fontSize: 14 },
+  panel: {
+    marginTop: -RADIUS,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    gap: 8,
+    backgroundColor: '#f4f8ff',
+    borderTopLeftRadius: RADIUS,
+    borderTopRightRadius: RADIUS,
+    borderWidth: BORDER,
+    borderBottomWidth: 0,
+    borderColor: INK,
+  },
+  headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  pill: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 32, borderRadius: 16, borderWidth: BORDER, paddingHorizontal: 12 },
+  pillText: { fontFamily: FONT.button, fontSize: 14, color: INK, flexShrink: 1 },
+  modePill: { flexShrink: 1, backgroundColor: '#e3edff', borderColor: '#a9c3f2' },
+  modeHard: { backgroundColor: '#2a3463', borderColor: INK },
+  modeTextHard: { color: '#ffc4c0' },
+  leftPill: { marginLeft: 'auto', backgroundColor: '#fff6d6', borderColor: '#efcf6a' },
+  leftWarn: { backgroundColor: '#fdeceb', borderColor: '#ec7b75' },
+  leftText: { fontVariant: ['tabular-nums'] },
+  statsRow: { flexDirection: 'row', alignItems: 'stretch', gap: 6 },
+  stat: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 1, backgroundColor: '#ffffff', borderRadius: 14, borderWidth: BORDER, borderBottomWidth: LIP, borderColor: '#c5d3ee', paddingVertical: 5, paddingHorizontal: 4 },
+  statTop: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  statText: { fontFamily: FONT.button, color: INK, fontSize: 15, flexShrink: 1, fontVariant: ['tabular-nums'] },
+  statLabel: { fontFamily: FONT.body, color: '#8a94b3', fontSize: 10 },
   iconRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  badge: { backgroundColor: '#dbeafe', color: '#1d4ed8', fontWeight: '800', fontSize: 12, paddingHorizontal: 8, paddingVertical: 6, borderRadius: 8, overflow: 'hidden' },
-  badgeHard: { backgroundColor: '#1f2937', color: '#fca5a5' },
-  limitLeft: { fontWeight: '800', color: '#1d4ed8', textAlign: 'center' },
   body: { flex: 1, justifyContent: 'center' },
   center: { alignItems: 'center', justifyContent: 'center', gap: 8 },
-  line: { fontSize: 16, fontWeight: '700', color: '#0f172a', textAlign: 'center' },
-  sub: { fontSize: 13, color: '#64748b', textAlign: 'center' },
-  moving: { fontSize: 22, fontWeight: '900', color: '#0f172a', textAlign: 'center' },
+  line: { fontFamily: FONT.body, fontSize: 16, color: '#0f172a', textAlign: 'center' },
+  sub: { fontFamily: FONT.body, fontSize: 13, color: '#64748b', textAlign: 'center' },
+  moving: { fontFamily: FONT.button, fontSize: 24, color: INK, textAlign: 'center' },
   round: { gap: 8 },
   roundHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  roundTitle: { fontSize: 22, fontWeight: '900', color: '#0f172a', flexShrink: 1 },
-  roundTitleSmall: { fontSize: 16, fontWeight: '700', color: '#475569', flexShrink: 1 },
-  seconds: { fontSize: 24, fontWeight: '900', color: '#0f172a', fontVariant: ['tabular-nums'] },
+  roundTitle: { fontFamily: FONT.button, fontSize: 24, color: INK, flexShrink: 1 },
+  roundTitleSmall: { fontFamily: FONT.body, fontSize: 16, color: '#5b6593', flexShrink: 1 },
+  seconds: { fontFamily: FONT.button, fontSize: 26, color: INK, fontVariant: ['tabular-nums'] },
   timer: { height: 8, borderRadius: 4, backgroundColor: '#e2e8f0', overflow: 'hidden' },
-  timerFill: { height: '100%', borderRadius: 4, backgroundColor: '#22c55e' },
-  timerWarn: { backgroundColor: '#ef4444' },
+  timerFill: { height: '100%', borderRadius: 4, backgroundColor: '#4fbd7c' },
+  timerWarn: { backgroundColor: '#ec7b75' },
   hands: { flexDirection: 'row', gap: 10 },
-  handButton: { flex: 1, height: 100, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(15,23,42,0.12)' },
-  handLabel: { fontSize: 17, fontWeight: '900', color: '#0f172a', marginTop: 2 },
-  pressed: { transform: [{ scale: 0.94 }] },
+  // 게임 버튼처럼: 굵은 남색 테두리와 아래 턱 (누르면 턱이 눌린다)
+  handButton: { flex: 1, height: 100, borderRadius: 20, alignItems: 'center', justifyContent: 'center', borderWidth: BORDER + 1, borderBottomWidth: LIP + 1 },
+  handLabel: { fontFamily: FONT.button, fontSize: 19, color: INK, marginTop: 2 },
+  pressed: { borderBottomWidth: BORDER, marginTop: LIP - BORDER },
   waiting: { height: 100, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14 },
   waitingText: { flexShrink: 1, gap: 4 },
-  arrived: { fontSize: 28, fontWeight: '900', color: '#e11d48' },
-  ended: { fontSize: 22, fontWeight: '900', color: '#b45309' },
-  saved: { color: '#2563eb', fontWeight: '700', fontSize: 14, textAlign: 'center' },
-  reward: { color: '#a16207', fontWeight: '900', fontSize: 17 },
+  arrived: { fontFamily: FONT.title, fontSize: 32, color: '#e0607e' },
+  failed: { fontFamily: FONT.title, fontSize: 44, lineHeight: 52, color: '#ec7b75' },
+  endLine: { fontFamily: FONT.button, fontSize: 16, color: INK, textAlign: 'center' },
+  saved: { fontFamily: FONT.button, color: '#4a78c9', fontSize: 14, textAlign: 'center' },
+  reward: { fontFamily: FONT.button, color: '#b7791f', fontSize: 17 },
+  endButton: { width: 220 },
   banner: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fef3c7', borderRadius: 12, padding: 12 },
-  bannerText: { flex: 1, color: '#92400e', fontWeight: '700', fontSize: 15 },
+  bannerText: { fontFamily: FONT.body, flex: 1, color: '#92400e', fontSize: 15 },
   bannerButton: { backgroundColor: '#d97706', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 },
-  bannerButtonText: { color: '#fff', fontWeight: '800' },
-  warn: { color: '#dc2626' },
+  bannerButtonText: { fontFamily: FONT.body, color: '#fff' },
+  warn: { color: '#d4524c' },
   error: { color: '#dc2626', textAlign: 'center' },
   disabled: { opacity: 0.4 },
   endActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
-  endButton: { height: 46, paddingHorizontal: 18, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f5f9' },
-  endMain: { backgroundColor: '#e11d48' },
-  endMainText: { color: '#fff', fontWeight: '900', fontSize: 16 },
-  endText: { color: '#334155', fontWeight: '800', fontSize: 15 },
 })

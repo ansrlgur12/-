@@ -1,9 +1,9 @@
 import { create } from 'zustand'
 import type { LatLng, NodeId, Vec2 } from '@jikjwau/shared/types'
-import { MAP_DETAIL_RADIUS_M, MAP_UNLOAD_MARGIN_M } from '@jikjwau/shared/config'
+import { MAP_DETAIL_RADIUS_M, MAP_UNLOAD_MARGIN_M, TILE_COORD_SCALE, TILES_PER_DEG } from '@jikjwau/shared/config'
 import { parseTileKey, project, tileCorner, tileFlatToLocal, tilesAround, unproject } from '@jikjwau/shared/geo'
 import { fetchRoadTile, fetchSceneryTile, fetchTerrainTile } from '../api/map'
-import { dropTerrain, putTerrain, putWater, setTerrainOrigin } from '../map/terrain'
+import { dropTerrain, putBeaches, putTerrain, putWater, seaWaterId, setSeaLevel, setTerrainOrigin } from '../map/terrain'
 import { inRegionKey } from '../map/region'
 
 /**
@@ -20,6 +20,8 @@ export interface MapTile {
   buildings: Array<[number, number[]]>
   /** [물 id, [바깥 고리, ...구멍]] — 여러 타일에 같은 물이 있을 수 있다 */
   water: Array<[number, number[][]]>
+  /** 모래사장 [id, 고리들] 로컬 좌표 */
+  beaches: Array<[number, number[][]]>
   /** [폭(m), 선] */
   waterways: Array<[number, number[]]>
 }
@@ -64,6 +66,9 @@ function tileDistance(key: string, origin: LatLng, point: Vec2) {
   return Math.hypot(c.x - point.x, c.y - point.y)
 }
 
+/** 타일 한 칸의 길이 (타일 안 좌표 단위) */
+const TILE_UNITS = TILE_COORD_SCALE / TILES_PER_DEG
+
 async function loadTile(key: string, origin: LatLng, lite: boolean): Promise<MapTile> {
   const [row, col] = parseTileKey(key)
   const local = (flat: number[]) => tileFlatToLocal(flat, row, col, origin)
@@ -83,14 +88,26 @@ async function loadTile(key: string, origin: LatLng, lite: boolean): Promise<Map
     roadPart = { positions, segments: roads.segments }
   }
   const water: MapTile['water'] = scenery?.water.map(([id, rings]) => [id, rings.map(local)]) ?? []
+  // 바다도 강·호수와 같은 물 면으로 (수면은 해수면). 1이면 칸 전체
+  const sea = scenery?.sea
+  const seaPolys = sea === 1 ? [[[0, 0, TILE_UNITS, 0, TILE_UNITS, TILE_UNITS, 0, TILE_UNITS]]] : (sea ?? [])
+  seaPolys.forEach((rings, k) => {
+    const id = seaWaterId(row, col, k)
+    setSeaLevel(id)
+    water.push([id, rings.map(local)])
+  })
   // 물 칸과 수면 높이도 화면에 넣기 전에 (다리·물 밑 땅 높이에 쓴다)
   putWater(key, water)
+  // 모래사장: 물가 땅을 낮춘 다음에 모래 높이로 평평하게
+  const beaches: MapTile['beaches'] = scenery?.beaches?.map(([id, rings]) => [id, rings.map(local)]) ?? []
+  putBeaches(key, beaches)
   return {
     key,
     lite,
     roads: roadPart,
     buildings: lite ? [] : (scenery?.buildings.map(([h, flat]) => [h, local(flat)]) ?? []),
     water,
+    beaches,
     waterways: scenery?.waterways.map(([w, flat]) => [w, local(flat)]) ?? [],
   }
 }

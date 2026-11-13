@@ -8,6 +8,9 @@ import { playEffect } from '../lib/sound'
 import { formatDay, formatDistance, formatDuration, rulesLabel } from './labels'
 import { TrailMap } from './TrailMap'
 import { Icon } from './Icon'
+import { GameButton } from './GameButton'
+import { BORDER, FONT, INK, LIP } from './theme'
+import { ScreenBackdrop, ScreenHeader } from './ScreenBackdrop'
 
 type Tab = 'mine' | 'world'
 
@@ -117,30 +120,27 @@ function Detail({ id, onClose }: { id: string; onClose: () => void }) {
       {/* Modal은 앱의 SafeAreaProvider 밖이라 안에 따로 둬야 노치·홈 바를 피한다 */}
       <SafeAreaProvider>
       <SafeAreaView style={styles.root} edges={['top', 'bottom', 'left', 'right']}>
-        <View style={styles.header}>
-          <Pressable onPress={onClose} hitSlop={12}>
-            <Text style={styles.back}>← 목록</Text>
-          </Pressable>
-          <Text style={styles.headerTitle}>기록</Text>
-          <View style={{ width: 50 }} />
-        </View>
+        <ScreenBackdrop />
+        <ScreenHeader title="기록" back="목록" onBack={onClose} />
         {loading && <ActivityIndicator style={styles.loading} />}
         {error && <Text style={styles.error}>{error}</Text>}
         {data && (
           <ScrollView contentContainerStyle={styles.detail}>
-            <Text style={[styles.mode, data.rules.mode === 'hardcore' && styles.modeHard, { alignSelf: 'flex-start' }]}>{rulesLabel(data.rules)}</Text>
-            <Text style={styles.detailTitle}>
-              {data.start.name} → {data.destination.name}
-            </Text>
-            <Text style={[styles.detailResult, data.arrived ? styles.ok : styles.warn]}>
-              {data.arrived ? (
-                <>
-                  <Icon name="party" size={20} /> 도착했어요!
-                </>
-              ) : (
-                `목적지까지 ${formatDistance(data.remainingM)} 남기고 끝났어요`
-              )}
-            </Text>
+            {/* 머리 카드: 위 줄은 규칙과 결과, 아래는 출발 → 도착 */}
+            <View style={styles.headCard}>
+              <View style={styles.headRow}>
+                <Text style={[styles.mode, styles.modePill, data.rules.mode === 'hardcore' && styles.modeHard]}>{rulesLabel(data.rules)}</Text>
+                <View style={[styles.resultPill, data.arrived ? styles.resultOk : styles.resultFail]}>
+                  <Icon name={data.arrived ? 'party' : 'crying'} size={20} />
+                  <Text style={[styles.resultText, data.arrived ? styles.ok : styles.warn]}>
+                    {data.arrived ? '도착 성공' : `실패 · ${formatDistance(data.remainingM)} 남음`}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.detailTitle}>
+                {data.start.name} <Text style={styles.arrow}>→</Text> {data.destination.name}
+              </Text>
+            </View>
             <TrailMap trail={data.trail} target={data.target} origin={data.start.latLng} arrived={data.arrived} width={mapSize} height={mapSize} />
             <Text style={styles.legend}>
               <Text style={{ color: '#16a34a' }}>●</Text> 출발 <Text style={{ color: '#e11d48' }}>●</Text> 목적지{' '}
@@ -164,9 +164,7 @@ function Detail({ id, onClose }: { id: string; onClose: () => void }) {
           </ScrollView>
         )}
         {/* 위쪽 버튼은 손이 잘 안 닿으니 아래에도 */}
-        <Pressable style={styles.bottomBack} onPress={onClose}>
-          <Text style={styles.bottomBackText}>목록으로</Text>
-        </Pressable>
+        <GameButton style={styles.bottomBack} label="목록으로" color="white" size="md" onPress={onClose} />
       </SafeAreaView>
       </SafeAreaProvider>
     </Modal>
@@ -240,13 +238,8 @@ export function RecordsScreen() {
 
   return (
     <SafeAreaView style={[StyleSheet.absoluteFill, styles.root]} edges={['top', 'bottom', 'left', 'right']}>
-      <View style={styles.header}>
-        <Pressable onPress={() => (playEffect('tap'), useGame.getState().setScreen('menu'))} hitSlop={16}>
-          <Text style={styles.back}>← 메뉴</Text>
-        </Pressable>
-        <Text style={styles.headerTitle}>기록실</Text>
-        <View style={{ width: 50 }} />
-      </View>
+      <ScreenBackdrop />
+      <ScreenHeader title="기록실" onBack={() => (playEffect('tap'), useGame.getState().setScreen('menu'))} />
       <View style={styles.tabs}>
         {(['mine', 'world'] as Tab[]).map((t) => (
           <Pressable key={t} style={[styles.tab, tab === t && styles.tabOn]} onPress={() => setTab(t)}>
@@ -261,55 +254,58 @@ export function RecordsScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#f8fafc' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
-  back: { color: '#2563eb', fontWeight: '700', width: 60 },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: '#0f172a' },
-  tabs: { flexDirection: 'row', marginHorizontal: 16, backgroundColor: '#e2e8f0', borderRadius: 12, padding: 3 },
-  tab: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
-  tabOn: { backgroundColor: '#fff' },
-  tabText: { color: '#64748b', fontWeight: '700' },
-  tabTextOn: { color: '#0f172a' },
+  root: { flex: 1, backgroundColor: '#3a8fe8' },
+  tabs: { flexDirection: 'row', marginHorizontal: 16, backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 16, borderWidth: BORDER, borderColor: INK, padding: 4 },
+  tab: { flex: 1, paddingVertical: 9, borderRadius: 12, alignItems: 'center' },
+  tabOn: { backgroundColor: '#4f8dff' },
+  tabText: { fontFamily: FONT.button, fontSize: 16, color: '#5b6593' },
+  tabTextOn: { color: '#fff' },
   list: { padding: 16, gap: 10, flexGrow: 1 },
-  row: { backgroundColor: '#fff', borderRadius: 14, padding: 12, gap: 4, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 1 } },
+  row: { backgroundColor: '#fff', borderRadius: 18, borderWidth: BORDER, borderColor: INK, borderBottomWidth: LIP, padding: 12, gap: 4 },
   rowHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  mode: { backgroundColor: '#dbeafe', color: '#1d4ed8', fontWeight: '800', fontSize: 12, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, overflow: 'hidden' },
+  mode: { fontFamily: FONT.body, backgroundColor: '#dbeafe', color: '#1d4ed8', fontSize: 12, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, overflow: 'hidden' },
   modeHard: { backgroundColor: '#1f2937', color: '#fca5a5' },
-  meta: { color: '#64748b', fontSize: 12, flexShrink: 1 },
-  badge: { marginLeft: 'auto', fontWeight: '800', fontSize: 12, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, overflow: 'hidden' },
+  meta: { fontFamily: FONT.body, color: '#64748b', fontSize: 12, flexShrink: 1 },
+  badge: { fontFamily: FONT.body, marginLeft: 'auto', fontSize: 12, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, overflow: 'hidden' },
   badgeArrived: { backgroundColor: '#dcfce7', color: '#15803d' },
   badgeLeft: { backgroundColor: '#fef3c7', color: '#b45309' },
-  course: { fontWeight: '700', color: '#0f172a', fontSize: 15 },
-  empty: { textAlign: 'center', color: '#94a3b8', marginTop: 60, lineHeight: 22 },
+  course: { fontFamily: FONT.body, color: INK, fontSize: 17 },
+  empty: { fontFamily: FONT.body, fontSize: 16, textAlign: 'center', color: '#fff', marginTop: 60, lineHeight: 24, textShadowColor: INK, textShadowRadius: 4 },
   error: { textAlign: 'center', color: '#dc2626', margin: 20 },
   loading: { marginTop: 40 },
   dayRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 24, marginTop: 14 },
-  dayArrow: { fontSize: 28, color: '#0f172a', paddingHorizontal: 8 },
+  dayArrow: { fontFamily: FONT.body, fontSize: 32, color: '#fff', paddingHorizontal: 8, textShadowColor: INK, textShadowRadius: 4 },
   disabledText: { color: '#cbd5e1' },
-  day: { fontSize: 17, fontWeight: '800', color: '#0f172a', minWidth: 130, textAlign: 'center' },
+  day: { fontFamily: FONT.body, fontSize: 19, color: '#fff', minWidth: 130, textAlign: 'center', textShadowColor: INK, textShadowRadius: 4 },
   sorts: { flexDirection: 'row', gap: 6, marginHorizontal: 16, marginTop: 10 },
-  sort: { flex: 1, borderRadius: 10, borderWidth: 1.5, borderColor: '#cbd5e1', paddingVertical: 7, alignItems: 'center', backgroundColor: '#fff' },
-  sortOn: { borderColor: '#0f172a', backgroundColor: '#0f172a' },
-  sortText: { fontWeight: '700', fontSize: 12, color: '#334155' },
-  sortHint: { fontSize: 10, color: '#94a3b8' },
+  sort: { flex: 1, borderRadius: 14, borderWidth: BORDER, borderColor: INK, paddingVertical: 7, alignItems: 'center', backgroundColor: '#fff' },
+  sortOn: { borderColor: INK, backgroundColor: '#4f8dff' },
+  sortText: { fontFamily: FONT.body, fontSize: 12, color: '#334155' },
+  sortHint: { fontFamily: FONT.body, fontSize: 10, color: '#94a3b8' },
   sortTextOn: { color: '#fff' },
-  worldHint: { color: '#94a3b8', fontSize: 12, textAlign: 'center' },
+  worldHint: { fontFamily: FONT.body, color: '#fff', fontSize: 13, textAlign: 'center', textShadowColor: INK, textShadowRadius: 4 },
   worldRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  rank: { width: 32, textAlign: 'center', fontSize: 16, fontWeight: '800', color: '#64748b' },
+  rank: { fontFamily: FONT.body, width: 32, textAlign: 'center', fontSize: 16, color: '#64748b' },
   rankMedal: { width: 32, alignItems: 'center' },
   worldBody: { flex: 1, gap: 2 },
-  names: { fontWeight: '800', color: '#0f172a', fontSize: 15 },
-  value: { fontWeight: '900', fontSize: 16, color: '#e11d48' },
+  names: { fontFamily: FONT.body, color: INK, fontSize: 17 },
+  value: { fontFamily: FONT.body, fontSize: 16, color: '#e11d48' },
   detail: { padding: 16, gap: 10, alignItems: 'center' },
-  bottomBack: { marginHorizontal: 16, marginBottom: 8, height: 50, borderRadius: 14, backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' },
-  bottomBackText: { fontSize: 16, fontWeight: '800', color: '#334155' },
-  detailTitle: { fontSize: 18, fontWeight: '800', color: '#0f172a', alignSelf: 'flex-start' },
-  detailResult: { fontSize: 15, fontWeight: '700', alignSelf: 'flex-start' },
-  ok: { color: '#15803d' },
-  warn: { color: '#b45309' },
-  legend: { color: '#64748b', fontSize: 12 },
+  bottomBack: { marginHorizontal: 16, marginBottom: 8 },
+  modePill: { fontFamily: FONT.button, fontSize: 13, lineHeight: 18, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16 },
+  headCard: { alignSelf: 'stretch', backgroundColor: '#ffffff', borderRadius: 20, borderWidth: BORDER, borderBottomWidth: LIP, borderColor: INK, padding: 12, gap: 8 },
+  headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  resultPill: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 32, borderRadius: 16, borderWidth: BORDER, paddingHorizontal: 12 },
+  resultOk: { backgroundColor: '#e4f6ea', borderColor: '#4fbd7c' },
+  resultFail: { backgroundColor: '#fdeceb', borderColor: '#ec7b75' },
+  resultText: { fontFamily: FONT.button, fontSize: 14 },
+  detailTitle: { fontFamily: FONT.button, fontSize: 19, lineHeight: 26, color: INK },
+  arrow: { color: '#6b9cf0' },
+  ok: { color: '#2f8a55' },
+  warn: { color: '#c85651' },
+  legend: { fontFamily: FONT.body, color: '#fff', fontSize: 13, textShadowColor: INK, textShadowRadius: 4 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignSelf: 'stretch' },
-  cell: { width: '48%', flexGrow: 1, backgroundColor: '#fff', borderRadius: 12, padding: 10 },
-  cellKey: { color: '#64748b', fontSize: 12 },
-  cellValue: { color: '#0f172a', fontWeight: '800', fontSize: 15, marginTop: 2 },
+  cell: { width: '48%', flexGrow: 1, backgroundColor: '#fff', borderRadius: 14, borderWidth: BORDER, borderColor: INK, padding: 10 },
+  cellKey: { fontFamily: FONT.body, color: '#64748b', fontSize: 12 },
+  cellValue: { fontFamily: FONT.button, color: INK, fontSize: 16, marginTop: 2 },
 })

@@ -25,6 +25,7 @@ import path from 'node:path'
 import { gzipSync } from 'node:zlib'
 import { createOSMStream } from 'osm-pbf-parser-node'
 import type { MapRegion, RoadTile, SceneryTile } from '@jikjwau/shared/types'
+import { Coast, seaPolygons, type SeaPolygon } from '../src/features/map/coast'
 import { buildingHeight, isBuilding } from '../src/features/map/buildings'
 import { assembleMultipolygon, contains, isWaterArea, WATERWAY_WIDTH } from '../src/features/map/water'
 import { isWalkable } from '../src/features/road/graph'
@@ -83,6 +84,8 @@ interface WaterRelation {
   inner: number[]
 }
 const waterRelations: WaterRelation[] = []
+/** 모래사장 멀티폴리곤 (natural=beach) */
+const beachRelations: WaterRelation[] = []
 const memberWayIds = new Set<number>()
 /** 대한민국 국경 관계(ISO3166-1=KR)의 바깥·안쪽 선 way */
 const border = { outer: [] as number[], inner: [] as number[] }
@@ -96,14 +99,15 @@ for await (const it of stream({ node: false, way: false, relation: ['type', 'nat
     }
     continue
   }
-  if (it.tags?.type !== 'multipolygon' || !isWaterArea(it.tags)) continue
+  const beach = it.tags?.natural === 'beach'
+  if (it.tags?.type !== 'multipolygon' || !(beach || isWaterArea(it.tags))) continue
   const rel: WaterRelation = { id: it.id, outer: [], inner: [] }
   for (const m of it.members) {
     if (m.type !== 'way') continue
     ;(m.role === 'inner' ? rel.inner : rel.outer).push(m.ref)
     memberWayIds.add(m.ref)
   }
-  waterRelations.push(rel)
+  ;(beach ? beachRelations : waterRelations).push(rel)
 }
 log(`relation: 물 멀티폴리곤 ${waterRelations.length}개, 국경 선 ${border.outer.length + border.inner.length}개, 조각 way ${memberWayIds.size}개`)
 if (border.outer.length === 0) throw new Error('원본에 대한민국 국경(ISO3166-1=KR) 관계가 없습니다')
@@ -115,8 +119,10 @@ const enum Kind {
   WaterArea = 3,
   Waterway = 4,
   MemberOnly = 5,
+  Coast = 6,
+  Beach = 7,
 }
-const WAY_TAGS = ['highway', 'foot', 'access', 'area', 'building', 'building:levels', 'height', 'natural', 'waterway', 'landuse', 'tunnel']
+const WAY_TAGS = ['highway', 'foot', 'footway', 'access', 'area', 'building', 'building:levels', 'height', 'natural', 'waterway', 'landuse', 'tunnel']
 const highwayNames: string[] = []
 const highwayIndex = new Map<string, number>()
 
@@ -142,6 +148,10 @@ for await (const it of stream({ node: false, way: WAY_TAGS, relation: false })) 
       highwayNames.push(tags.highway)
     }
     value = highwayIndex.get(tags.highway)!
+  } else if (tags.natural === 'coastline') {
+    kind = Kind.Coast
+  } else if (closed && tags.natural === 'beach') {
+    kind = Kind.Beach
   } else if (closed && isBuilding(tags)) {
     kind = Kind.Building
     value = buildingHeight(tags)
@@ -311,6 +321,18 @@ for (let w = 0; w < wayCount; w++) {
 }
 log(`물 면 ${waterPolygons.length}개 조립, 타일 배정 ${waterPolygons.reduce((n, p) => n + p.tiles.length, 0)}건`)
 
+// 모래사장: 물 면과 같은 방식 (id 규칙도 같다)
+const beachPolygons: WaterPolygon[] = []
+for (const rel of beachRelations) {
+  assembleMultipolygon(lines(rel.outer), lines(rel.inner)).forEach((rings, i) => beachPolygons.push(withTiles(-(rel.id * 100 + i), rings)))
+}
+for (let w = 0; w < wayCount; w++) {
+  if (wayKind.a[w] !== Kind.Beach) continue
+  const pts = wayPoints(w)
+  if (pts) beachPolygons.push(withTiles(wayId.a[w], [pts.slice(0, -1)]))
+}
+log(`모래사장 ${beachPolygons.length}개`)
+
 // ── 대한민국 영역 ───────────────────────────────────────────────
 // 국경 고리의 변을 위도 행마다 나눠 두고(점 안팎 판정을 빠르게), 국경이 지나는 타일을 표시한다
 const borderPolys = assembleMultipolygon(lines(border.outer), lines(border.inner))
@@ -437,6 +459,74 @@ for (let k = 0; k < needIds.length; k++) {
 }
 const onMainland = (k: number) => find(k) === mainland
 log(`길 노드 ${roadNodeCount}개 중 본토 ${groupSize[mainland]}개 (나머지는 섬이거나 끊긴 길)`)
+
+// ── 바다 ────────────────────────────────────────────────────────
+// 해안선(왼쪽이 땅)으로 영역 안 타일마다 바다 면을 만든다 (강·호수처럼 그린다).
+// 해안선이 지나는 타일은 해안선을 잘라 면으로, 안 지나는 타일은 이어진 묶음마다 한 점으로 판정한다
+const seaByTile = new Map<string, SeaPolygon[] | 1>()
+{
+  const segA: number[] = []
+  const segB: number[] = []
+  for (let w = 0; w < wayCount; w++) {
+    if (wayKind.a[w] !== Kind.Coast) continue
+    for (let i = wayStart.a[w] + 1; i < wayStart.a[w] + wayLen.a[w]; i++) {
+      const a = refIdx[i - 1]
+      const b = refIdx[i]
+      if (!hasCoord(a) || !hasCoord(b) || a === b) continue
+      segA.push(a)
+      segB.push(b)
+    }
+  }
+  const coast = new Coast(lngE7, latE7, segA, segB, E7_PER_TILE)
+  log(`해안선 조각 ${coast.segmentCount}개`)
+
+  const regionTiles: Array<[number, number]> = []
+  for (const [r, ...runs] of regionRows) for (let i = 0; i < runs.length; i += 2) for (let c = runs[i]; c <= runs[i + 1]; c++) regionTiles.push([r, c])
+  const inRegion = new Set(regionTiles.map(([r, c]) => `${r}_${c}`))
+
+  let coastal = 0
+  for (const [r, c] of regionTiles) {
+    if (!coast.hasCoast(r, c)) continue
+    coastal++
+    const polys = seaPolygons(coast, r, c, E7_PER_TILE)
+    if (polys) seaByTile.set(`${r}_${c}`, polys)
+  }
+  log(`해안 타일 ${coastal}개 바다 면 만듦`)
+
+  // 해안선이 안 지나는 타일은 이어진 묶음 전체가 같은 쪽이다. 해안 타일 옆 칸 하나로 판정한다
+  const seen = new Set<string>()
+  let seaTiles = 0
+  for (const [r0, c0] of regionTiles) {
+    const k0 = `${r0}_${c0}`
+    if (seen.has(k0) || coast.hasCoast(r0, c0)) continue
+    const group: string[] = []
+    let probe: [number, number] | null = null
+    const stack: Array<[number, number]> = [[r0, c0]]
+    seen.add(k0)
+    while (stack.length > 0) {
+      const [r, c] = stack.pop()!
+      group.push(`${r}_${c}`)
+      for (const [dr, dc] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nr = r + dr
+        const nc = c + dc
+        const nk = `${nr}_${nc}`
+        if (coast.hasCoast(nr, nc)) {
+          probe ??= [r, c]
+          continue
+        }
+        if (seen.has(nk) || !inRegion.has(nk)) continue
+        seen.add(nk)
+        stack.push([nr, nc])
+      }
+    }
+    const sea = probe ? coast.isSea((probe[1] + 0.5) * E7_PER_TILE, (probe[0] + 0.5) * E7_PER_TILE) === true : false
+    if (sea) {
+      for (const k of group) seaByTile.set(k, 1)
+      seaTiles += group.length
+    }
+  }
+  log(`바다 타일: 해안 ${[...seaByTile.values()].filter((v) => v !== 1).length}개 + 전부 바다 ${seaTiles}개`)
+}
 
 // ── 띠 단위로 타일 쓰기 ─────────────────────────────────────────
 interface Bucket {
@@ -566,6 +656,38 @@ for (let bandStart = globalMinRow; bandStart <= globalMaxRow; bandStart += BAND_
     }
   }
 
+  for (const poly of beachPolygons) {
+    for (const [row, col] of poly.tiles) {
+      if (!inBand(row) || !inRegionTile(row, col)) continue
+      const b = bucket(row, col)
+      ;(b.scenery.beaches ??= []).push([
+        poly.id,
+        poly.rings.map((ring) => {
+          const flat: number[] = []
+          for (const p of ring) pushLocal(flat, b, p.x, p.y)
+          return flat
+        }),
+      ])
+    }
+  }
+
+  // 바다가 있는 타일 (건물·길이 없어도 바다만으로 풍경 타일을 쓴다)
+  for (const [key, sea] of seaByTile) {
+    const [row, col] = key.split('_').map(Number)
+    if (!inBand(row)) continue
+    const b = bucket(row, col)
+    b.scenery.sea =
+      sea === 1
+        ? 1
+        : sea.map((rings) =>
+            rings.map((ring) => {
+              const flat: number[] = []
+              for (const [x, y] of ring) pushLocal(flat, b, x, y)
+              return flat
+            }),
+          )
+  }
+
   for (const b of buckets.values()) {
     const dir = path.join(OUT, String(b.row))
     await mkdir(dir, { recursive: true })
@@ -577,7 +699,7 @@ for (let bandStart = globalMinRow; bandStart <= globalMaxRow; bandStart += BAND_
       bytes += gz.length
     }
     const s = b.scenery
-    if (s.buildings.length + s.water.length + s.waterways.length > 0) {
+    if (s.buildings.length + s.water.length + s.waterways.length > 0 || s.sea || s.beaches) {
       const gz = gzipSync(JSON.stringify(s))
       await writeFile(path.join(dir, `${b.col}.scenery.json.gz`), gz)
       sceneryFiles++
@@ -588,7 +710,26 @@ for (let bandStart = globalMinRow; bandStart <= globalMaxRow; bandStart += BAND_
 }
 
 await mkdir(OUT, { recursive: true })
-await writeFile(path.join(OUT, 'region.json'), JSON.stringify({ rows: regionRows } satisfies MapRegion))
+// 칸 전체가 바다인 타일을 줄마다 이어진 범위로 (앱이 타일을 받기 전에 먼 바다를 미리 칠한다)
+const seaRowsMap = new Map<number, number[]>()
+for (const [key, sea] of seaByTile) {
+  if (sea !== 1) continue
+  const [row, col] = key.split('_').map(Number)
+  let cols = seaRowsMap.get(row)
+  if (!cols) seaRowsMap.set(row, (cols = []))
+  cols.push(col)
+}
+const seaRows: number[][] = []
+for (const [row, cols] of [...seaRowsMap].sort((a, b) => a[0] - b[0])) {
+  cols.sort((a, b) => a - b)
+  const line = [row]
+  for (let i = 0; i < cols.length; i++) {
+    if (i === 0 || cols[i] !== cols[i - 1] + 1) line.push(cols[i], cols[i])
+    else line[line.length - 1] = cols[i]
+  }
+  seaRows.push(line)
+}
+await writeFile(path.join(OUT, 'region.json'), JSON.stringify({ rows: regionRows, sea: seaRows } satisfies MapRegion))
 await writeFile(
   path.join(DATA_DIR, 'tiles.json'),
   JSON.stringify({ dir: OUT_NAME, source: path.basename(PBF), builtAt: new Date().toISOString(), roadFiles, sceneryFiles }, null, 2),
@@ -596,6 +737,8 @@ await writeFile(
 // 이전에 만든 타일 폴더 정리. 다른 프로그램이 쓰는 중이면 남겨 두고 알려만 준다
 for (const name of await readdir(DATA_DIR)) {
   if (!name.startsWith('tiles') || name === OUT_NAME || name === 'tiles.json') continue
+  // 이름이 만든 시각이라, 이번보다 나중에 시작한 폴더(동시에 돌고 있는 다른 빌드)는 건드리지 않는다
+  if (name > OUT_NAME) continue
   try {
     await rm(path.join(DATA_DIR, name), { recursive: true, force: true })
   } catch (err) {

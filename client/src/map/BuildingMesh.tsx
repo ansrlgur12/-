@@ -7,8 +7,8 @@ import { nightMaterials } from './daylight'
 import { terrainHeightAt } from './terrain'
 import { LANDMARKS, type TowerStyle } from './landmarks'
 
-const PALETTE = ['#f3e9dc', '#e9dccb', '#dfe6ea', '#efe1df', '#e3ecdf', '#ece6d6']
-const WALL_SHADE = 0.82
+const PALETTE = ['#fbf3e8', '#f5e8d6', '#e8f0f5', '#f9ebe7', '#ebf5e6', '#f6f0df']
+const WALL_SHADE = 0.92
 /** 비탈에 선 건물도 땅에 떠 보이지 않게 벽을 땅속까지 내린다 */
 const SINK_M = 3
 
@@ -16,11 +16,11 @@ const SINK_M = 3
 const TOWER_MIN_M = 50
 /** 고층 건물 기본 유리색들 [유리, 띠] */
 const TOWER_PALETTE: Array<[string, string]> = [
-  ['#5f8db5', '#3f617f'],
-  ['#6aa5a8', '#467a7c'],
-  ['#93a5b7', '#66788c'],
-  ['#56697e', '#36475a'],
-  ['#a3bccf', '#71899c'],
+  ['#86b4dd', '#5f8bb2'],
+  ['#8ccac8', '#62a09f'],
+  ['#b6c7d8', '#8a9db1'],
+  ['#8fa6c0', '#667d98'],
+  ['#c3d8e8', '#93acc0'],
 ]
 /** 유리는 위로 갈수록 하늘을 비춰 밝아진다 */
 const GLASS_SKY = new Color('#e3eff8')
@@ -168,7 +168,7 @@ function classify(buildings: Array<[number, number[]]>, origin: LatLng | undefin
     for (const p of pts) base = Math.min(base, terrainHeightAt(p.x, p.y, tileKey))
     if (!landmark && h < TOWER_MIN_M) return low.push([h, pts, i, base])
     const [glass, band] = TOWER_PALETTE[i % TOWER_PALETTE.length]
-    const style = { glass, band, roof: '#cbd5e1', topScale: 1, spire: 0, ...landmark?.style }
+    const style = { glass, band, roof: '#e4e9f0', topScale: 1, spire: 0, ...landmark?.style }
     towers.push({ pts, center: centroid(pts), height: h, base, style, seed: i })
   })
   return { low, towers }

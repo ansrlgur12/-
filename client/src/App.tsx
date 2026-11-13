@@ -12,6 +12,7 @@ import { createScenePicker, hitsPin, pickGround } from './map/scenePicker'
 import type { DragHandlers } from './map/CameraGestures'
 import { useGame, type Spot } from './store/game'
 import { SetupPanel } from './ui/SetupPanel'
+import { Compass } from './ui/Compass'
 import { GamePanel } from './ui/GamePanel'
 import { LobbyPanel } from './ui/LobbyPanel'
 import { PlaceSheet } from './ui/PlaceSheet'
@@ -27,13 +28,16 @@ import { RoundOverlay } from './ui/RoundOverlay'
 import { GameMenu } from './ui/GameMenu'
 import { ArrivalCelebration } from './ui/ArrivalCelebration'
 import { setBgm } from './lib/sound'
-import { isDarkSky, kstHour, skyAt } from './map/daylight'
+import { useFonts } from 'expo-font'
+import { FONT_FILES, FONT } from './ui/theme'
 
 /** 출발지를 정했을 때 카메라 거리 */
 const START_VIEW_DISTANCE_M = 350
 const GAME_CAMERA = { distance: 160, pitch: 0.95 }
 
 export default function App() {
+  // 게임 글꼴(로고·버튼). 읽는 동안(아주 잠깐)은 하늘색 빈 화면
+  const [fontsLoaded] = useFonts(FONT_FILES)
   const [rig] = useState(createCameraRig)
   const [picker] = useState(createScenePicker)
   const status = useGame((s) => s.status)
@@ -74,10 +78,6 @@ export default function App() {
   const focusLatLng = (): LatLng => unproject({ x: rig.focus.x, y: -rig.focus.z }, useGame.getState().start.latLng)
 
   // 가장 가까운 "북쪽이 위" 각도로 되돌린다 (여러 바퀴 돌렸어도 되감기지 않게)
-  const faceNorth = () => {
-    rig.yaw = Math.round(rig.yaw / (Math.PI * 2)) * Math.PI * 2
-  }
-
   const lookAt = (latLng: LatLng) => {
     const p = project(latLng, useGame.getState().start.latLng)
     rig.following = false
@@ -137,6 +137,8 @@ export default function App() {
     lookAt(viewing)
   }
 
+  if (!fontsLoaded) return <View style={styles.fontWait} />
+
   return (
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
@@ -164,9 +166,7 @@ export default function App() {
               {/* 오른쪽 위 버튼들. 게임 중이면 맨 위에 메뉴 */}
               {inGame && (
                 <>
-                  <Pressable style={[styles.roundButton, { top: playing ? 60 : 10 }]} onPress={faceNorth}>
-                    <Text style={styles.compassText}>N</Text>
-                  </Pressable>
+                  <Compass rig={rig} top={playing ? 60 : 10} />
                   <Pressable style={[styles.roundButton, { top: playing ? 110 : 60 }]} onPress={() => (rig.following = true)}>
                     <Text style={styles.recenterText}>◎</Text>
                   </Pressable>
@@ -179,7 +179,10 @@ export default function App() {
                   <GameMenu top={10} />
                 </>
               )}
-              <Text style={styles.attribution}>© OpenStreetMap contributors</Text>
+              {/* 준비·게임 패널은 둥근 모서리만큼 지도 위로 올라오니 그만큼 비켜 둔다. 고르기 카드가 뜨면 그 카드가 덮으니 숨긴다 */}
+              {!(inGame && status === 'setup' && picked) && (
+                <Text style={[styles.attribution, inGame && status !== 'lobby' && styles.attributionRaised]}>© OpenStreetMap contributors</Text>
+              )}
               {booted && screen === 'menu' && <MainMenu />}
             </View>
 
@@ -189,8 +192,8 @@ export default function App() {
           </View>
           {booted && screen === 'records' && <RecordsScreen />}
           {booted && screen === 'closet' && <ClosetScreen />}
-          {/* 로딩 화면은 자기 상태바를 쓴다. 메뉴는 배경 하늘(지금 시각)이 어두우면 밝은 글자 */}
-          <StatusBar style={screen === 'menu' && isDarkSky(skyAt(kstHour()).sky) ? 'light' : 'dark'} />
+          {/* 로딩 화면은 자기 상태바를 쓴다. 메뉴는 파란 하늘 그림 위라 흰 글자 */}
+          <StatusBar style={screen === 'menu' ? 'light' : 'dark'} />
         </SafeAreaView>
         {!booted && <LoadingScreen onDone={onBooted} />}
       </SafeAreaProvider>
@@ -200,10 +203,11 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#fff' },
+  fontWait: { flex: 1, backgroundColor: '#7cc4f5' },
   gameArea: { flex: 1 },
   sceneWrap: { flex: 1 },
   roundButton: { position: 'absolute', right: 10, width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.92)', alignItems: 'center', justifyContent: 'center' },
-  compassText: { fontSize: 16, fontWeight: '700', color: '#dc2626' },
-  recenterText: { fontSize: 22, color: '#2563eb' },
-  attribution: { position: 'absolute', right: 6, bottom: 4, fontSize: 10, color: '#374151' },
+  recenterText: { fontFamily: FONT.body, fontSize: 22, color: '#2563eb' },
+  attributionRaised: { bottom: 30 },
+  attribution: { fontFamily: FONT.body, position: 'absolute', right: 6, bottom: 4, fontSize: 10, color: '#374151' },
 })

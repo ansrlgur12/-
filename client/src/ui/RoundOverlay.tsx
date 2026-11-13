@@ -8,8 +8,11 @@ import { hapticImpact, hapticResult } from '../lib/haptics'
 import { useGame, useMySeat } from '../store/game'
 import { Confetti } from './Confetti'
 import { Icon, type IconName } from './Icon'
-import { DIRECTION_ARROW, DIRECTION_LABEL, HAND_ICON, HAND_NAME, seatColor } from './labels'
+import { DIRECTION_ARROW, DIRECTION_LABEL, HAND_ICON, HAND_NAME, UTURN_COLOR, seatColor, seatPastel, seatTint } from './labels'
 import { useSeatName } from './useSeatName'
+import { OutlinedText } from './OutlinedText'
+import { BORDER, FONT, INK, TEXT_STROKE } from './theme'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 /** 이번 판이 나에게 어떤 결과인지 */
 type Outcome = 'win' | 'through' | 'lose' | 'draw' | 'watch'
@@ -22,11 +25,13 @@ function outcomeFor(r: RpsRoundResult, mine?: Seat): Outcome {
 }
 
 const HEADLINE: Record<Exclude<Outcome, 'watch'>, { icon: IconName; text: string; color: string }> = {
-  win: { icon: 'party', text: '이겼다!', color: '#e11d48' },
-  through: { icon: 'fist', text: '살아남았다!', color: '#d97706' },
-  lose: { icon: 'crying', text: '졌다…', color: '#475569' },
-  draw: { icon: 'handshake', text: '비겼다!', color: '#0f172a' },
+  win: { icon: 'party', text: '이겼다!', color: '#e0607e' },
+  through: { icon: 'fist', text: '살아남았다!', color: '#d9913a' },
+  lose: { icon: 'crying', text: '졌다…', color: '#6b7590' },
+  draw: { icon: 'handshake', text: '비겼다!', color: INK },
 }
+
+const UTURN = UTURN_COLOR
 
 /** 손을 공개하기 전에 한 단어씩 외친다. RPS_CHANT_MS 안에 셋 다 나온다 */
 const CHANT = ['가위!', '바위!', '보!']
@@ -37,6 +42,7 @@ const CHANT_STEP_MS = RPS_CHANT_MS / CHANT.length
  * 먼저 "가위! 바위! 보!"를 외치며 주먹을 흔들고, 그다음 누가 무엇을 냈고 누가 이겼고 어디로 가는지 보여 준다
  */
 function ResultModal({ result }: { result: RpsRoundResult }) {
+  const insets = useSafeAreaInsets()
   const mine = useMySeat()
   const name = useSeatName()
   const outcome = outcomeFor(result, mine)
@@ -93,10 +99,10 @@ function ResultModal({ result }: { result: RpsRoundResult }) {
   const go = single
     ? { arrow: DIRECTION_ARROW[SEAT_DIRECTION[single]], label: DIRECTION_LABEL[SEAT_DIRECTION[single]], color: seatColor(single) }
     : result.winners.length === 2
-      ? { arrow: null, label: '둘이서 한 판 더!', color: '#d97706' }
+      ? { arrow: null, label: '둘이서 한 판 더!', color: '#e3a347' }
       : result.rematch
-        ? { arrow: null, label: '다시 한 판!', color: '#0f172a' }
-        : { arrow: '↩', label: '유턴', color: '#7c3aed' }
+        ? { arrow: null, label: '다시 한 판!', color: '#56618f' }
+        : { arrow: null, label: '유턴', color: UTURN }
 
   const shown = (v: Animated.Value, from: number) => ({
     opacity: v.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0, 1, 1] }),
@@ -105,7 +111,7 @@ function ResultModal({ result }: { result: RpsRoundResult }) {
 
   return (
     <>
-      <View style={styles.dim} />
+      <View style={[styles.dim, { top: -insets.top, bottom: -insets.bottom }]} />
       <Animated.View
         style={[
           styles.modal,
@@ -121,7 +127,11 @@ function ResultModal({ result }: { result: RpsRoundResult }) {
             </Text>
           </Animated.View>
         ) : (
-          <Animated.Text style={[styles.chant, shown(word, 2.2)]}>{CHANT[step]}</Animated.Text>
+          <Animated.View style={shown(word, 2.2)}>
+            <OutlinedText style={styles.chant} stroke={TEXT_STROKE} depth={3}>
+              {CHANT[step]}
+            </OutlinedText>
+          </Animated.View>
         )}
 
         <View style={styles.hands}>
@@ -131,7 +141,7 @@ function ResultModal({ result }: { result: RpsRoundResult }) {
             const hand = result.hands[seat]!
             const dir = SEAT_DIRECTION[seat]
             return (
-              <View key={seat} style={[styles.hand, { borderColor: seatColor(seat) }, won && { backgroundColor: seatColor(seat) }, lost && styles.handLost]}>
+              <View key={seat} style={[styles.hand, { borderColor: seatColor(seat), backgroundColor: seatTint(seat) }, won && { backgroundColor: seatPastel(seat), borderWidth: BORDER + 2 }, lost && styles.handLost]}>
                 <View style={styles.crown}>{won && <Icon name="crown" size={26} />}</View>
                 {revealed ? (
                   <Animated.View style={shown(reveal, 0.3)}>
@@ -143,12 +153,12 @@ function ResultModal({ result }: { result: RpsRoundResult }) {
                     <Icon name="rock" size={60} />
                   </Animated.View>
                 )}
-                <Text style={[styles.handName, won && styles.onColor]}>{revealed ? HAND_NAME[hand] : ' '}</Text>
-                <Text style={[styles.handSeat, won && styles.onColor, seat === mine && styles.me]} numberOfLines={1}>
+                <Text style={styles.handName}>{revealed ? HAND_NAME[hand] : ' '}</Text>
+                <Text style={[styles.handSeat, seat === mine && styles.me]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.6}>
                   {name(seat)}
                 </Text>
-                <Text style={[styles.handDir, { color: won ? '#fff' : seatColor(seat) }]}>
-                  {DIRECTION_ARROW[dir]} {DIRECTION_LABEL[dir]}
+                <Text style={[styles.handDir, { color: seatColor(seat) }]}>
+                  {DIRECTION_LABEL[dir]}
                 </Text>
               </View>
             )
@@ -175,16 +185,16 @@ function ResultModal({ result }: { result: RpsRoundResult }) {
 
 function moveBanner(e: Extract<GameEvent, { type: 'move' }>): { icon?: IconName; text: string; color: string } {
   const dir = e.direction
-  const color = dir ? DIRECTION_COLOR[dir] : '#7c3aed'
+  const color = dir ? DIRECTION_COLOR[dir] : UTURN
   switch (e.reason) {
     case 'start':
-      return { icon: 'walking', text: '출발!', color: '#0f172a' }
+      return { text: '출발!', color: '#56618f' }
     case 'win':
       return { text: `${DIRECTION_ARROW[dir!]} ${DIRECTION_LABEL[dir!]} 중`, color }
     case 'uturn':
-      return { icon: 'uturn', text: '유턴 중', color: '#7c3aed' }
+      return { text: '유턴 중', color: UTURN }
     case 'deadEnd':
-      return { icon: 'uturn', text: '막다른 길! 돌아가요', color: '#7c3aed' }
+      return { text: '막다른 길! 돌아가요', color: UTURN }
     case 'only':
       return { text: dir ? `${DIRECTION_ARROW[dir]} 외길이라 ${DIRECTION_LABEL[dir]}` : '외길이라 그대로', color }
   }
@@ -219,7 +229,7 @@ export function RoundOverlay() {
 }
 
 const styles = StyleSheet.create({
-  dim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15,23,42,0.35)' },
+  dim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(27,37,89,0.25)' },
   modal: {
     position: 'absolute',
     left: 16,
@@ -236,25 +246,25 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 8 },
   },
-  modalLose: { backgroundColor: '#e2e8f0' },
-  chant: { fontSize: 44, lineHeight: 52, fontWeight: '900', color: '#0f172a' },
+  modalLose: { backgroundColor: '#eef1f6' },
+  chant: { fontFamily: FONT.body, fontSize: 48, lineHeight: 56, color: '#ffd84d' },
   headlineRow: { height: 52, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headline: { fontSize: 34, fontWeight: '900', flexShrink: 1 },
+  headline: { fontFamily: FONT.body, fontSize: 36, flexShrink: 1 },
   hands: { flexDirection: 'row', gap: 8, justifyContent: 'center', alignSelf: 'stretch' },
-  hand: { flex: 1, maxWidth: 120, borderWidth: 3, borderRadius: 16, paddingVertical: 8, alignItems: 'center', backgroundColor: '#fff' },
+  hand: { flex: 1, maxWidth: 120, borderWidth: BORDER + 1, borderRadius: 16, paddingVertical: 8, alignItems: 'center', backgroundColor: '#fff' },
   handLost: { opacity: 0.4 },
   crown: { height: 28, justifyContent: 'center' },
-  handName: { fontSize: 15, fontWeight: '800', color: '#0f172a', marginTop: 2 },
-  handSeat: { fontSize: 14, fontWeight: '700', color: '#334155', marginTop: 2, paddingHorizontal: 4 },
-  me: { fontWeight: '900' },
-  handDir: { fontSize: 13, fontWeight: '800', marginTop: 2 },
-  onColor: { color: '#fff' },
+  handName: { fontFamily: FONT.body, fontSize: 15, color: '#4b557a', marginTop: 2 },
+  // 누가 누군지 한눈에: 이름을 가장 크게
+  handSeat: { fontFamily: FONT.button, fontSize: 20, lineHeight: 26, color: INK, marginTop: 2, paddingHorizontal: 4 },
+  me: { color: '#4a78c9' },
+  handDir: { fontFamily: FONT.button, fontSize: 14, marginTop: 2 },
   go: { flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 18, paddingVertical: 10, paddingHorizontal: 22 },
-  goArrow: { fontSize: 44, fontWeight: '900', color: '#fff' },
-  goLabel: { fontSize: 34, fontWeight: '900', color: '#fff' },
+  goArrow: { fontFamily: FONT.body, fontSize: 44, color: '#fff' },
+  goLabel: { fontFamily: FONT.body, fontSize: 36, color: '#fff' },
   hidden: { opacity: 0 },
-  note: { fontSize: 13, color: '#475569', fontWeight: '600' },
+  note: { fontFamily: FONT.body, fontSize: 13, color: '#475569' },
   bannerWrap: { position: 'absolute', top: 12, left: 60, right: 60, alignItems: 'center' },
   banner: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 20, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
-  bannerText: { color: '#fff', fontSize: 22, fontWeight: '900' },
+  bannerText: { fontFamily: FONT.body, color: '#fff', fontSize: 24 },
 })

@@ -50,7 +50,7 @@ describe('buildGraph', () => {
         node(8, 0, 500),
         node(9, 100, 500),
         way(10, [1, 2, 4]),
-        way(11, [2, 3], 'motorway'),
+        way(11, [2, 3], 'construction'),
         way(12, [8, 9], 'footway'),
         way(13, [1, 8], 'residential', { access: 'private' }),
       ],

@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react'
 import { KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { GameButton } from './GameButton'
+import { BORDER, CARD, FONT, INK } from './theme'
+import { CartoonTitle } from './OutlinedText'
 
 interface Props {
   visible: boolean
@@ -39,7 +42,7 @@ export function InputPopup({ visible, title, initialValue = '', placeholder, max
       <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <View style={styles.card}>
-          <Text style={styles.title}>{title}</Text>
+          <CartoonTitle size={24}>{title}</CartoonTitle>
           <TextInput
             style={[styles.input, uppercase && styles.upper]}
             value={value}
@@ -53,12 +56,8 @@ export function InputPopup({ visible, title, initialValue = '', placeholder, max
             onSubmitEditing={confirm}
           />
           <View style={styles.buttons}>
-            <Pressable style={[styles.button, styles.cancel]} onPress={onClose}>
-              <Text style={styles.cancelText}>취소</Text>
-            </Pressable>
-            <Pressable style={[styles.button, styles.ok, !ok && styles.disabled]} disabled={!ok} onPress={confirm}>
-              <Text style={styles.okText}>{confirmLabel}</Text>
-            </Pressable>
+            <GameButton style={styles.button} label="취소" color="white" size="sm" onPress={onClose} />
+            <GameButton style={styles.button} label={confirmLabel} color="yellow" size="sm" disabled={!ok} onPress={confirm} />
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -68,15 +67,9 @@ export function InputPopup({ visible, title, initialValue = '', placeholder, max
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', padding: 24 },
-  card: { backgroundColor: '#fff', borderRadius: 16, padding: 18, gap: 14 },
-  title: { fontSize: 17, fontWeight: '700', color: '#111827' },
-  input: { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 10, paddingHorizontal: 12, height: 46, fontSize: 16 },
-  upper: { letterSpacing: 3, fontWeight: '700', fontSize: 20, textAlign: 'center' },
+  card: { ...CARD, padding: 18, gap: 14 },
+  input: { fontFamily: FONT.body, borderWidth: BORDER, borderColor: INK, borderRadius: 14, paddingHorizontal: 14, height: 52, fontSize: 17, backgroundColor: '#f7f9ff' },
+  upper: { fontFamily: FONT.body, letterSpacing: 3, fontSize: 20, textAlign: 'center' },
   buttons: { flexDirection: 'row', gap: 10 },
-  button: { flex: 1, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
-  cancel: { backgroundColor: '#f3f4f6' },
-  cancelText: { color: '#374151', fontWeight: '600' },
-  ok: { backgroundColor: '#111827' },
-  okText: { color: '#fff', fontWeight: '700' },
-  disabled: { opacity: 0.4 },
+  button: { flex: 1 },
 })

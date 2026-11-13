@@ -2,9 +2,12 @@ import { Pressable, Share, StyleSheet, Text, View } from 'react-native'
 import type { Seat } from '@jikjwau/shared/types'
 import { SEAT_DIRECTION } from '@jikjwau/shared/config'
 import { useGame, useMySeat } from '../store/game'
-import { DIRECTION_ARROW, DIRECTION_LABEL, rulesLabel, seatColor } from './labels'
+import { DIRECTION_ARROW, DIRECTION_LABEL, rulesLabel, seatColor, seatTint } from './labels'
 import { BlockBuddy } from './BlockBuddy'
+import { ProfileAvatar } from './ProfileAvatar'
 import { Icon } from './Icon'
+import { GameButton } from './GameButton'
+import { BORDER, FONT } from './theme'
 
 const SEATS: Seat[] = ['A', 'B', 'C']
 
@@ -23,14 +26,10 @@ export function LobbyPanel() {
         ) : (
           <>
             <Text style={styles.error}>{error}</Text>
-            <Pressable style={[styles.button, styles.primary]} onPress={startGame}>
-              <Text style={styles.primaryText}>다시 시도</Text>
-            </Pressable>
+            <GameButton label="다시 시도" color="yellow" size="md" onPress={startGame} />
           </>
         )}
-        <Pressable style={[styles.button, styles.leave]} onPress={leaveRoom}>
-          <Text style={styles.leaveText}>메뉴로</Text>
-        </Pressable>
+        <GameButton label="메뉴로" color="white" size="md" onPress={leaveRoom} />
       </View>
     )
   }
@@ -69,9 +68,14 @@ export function LobbyPanel() {
               disabled={!!player || busy}
               onPress={() => changeSeat(seat)}
             >
-              <View style={[styles.avatar, !player && styles.avatarEmpty]}>
-                <BlockBuddy unit={9} shirt={player ? color : '#cbd5e1'} />
-              </View>
+              {player ? (
+                // 들어온 사람은 옷장에서 입은 옷 그대로
+                <ProfileAvatar size={44} outfit={player.outfit} style={[styles.avatarOn, { borderColor: color, backgroundColor: seatTint(seat) }]} />
+              ) : (
+                <View style={[styles.avatar, styles.avatarEmpty]}>
+                  <BlockBuddy unit={9} shirt="#cbd5e1" />
+                </View>
+              )}
               <View style={styles.seatBody}>
                 {player ? (
                   <View style={styles.nameRow}>
@@ -100,14 +104,8 @@ export function LobbyPanel() {
       {error && <Text style={styles.error}>{error}</Text>}
       {!isHost && <Text style={styles.waiting}>방장이 시작하기를 기다리는 중…</Text>}
       <View style={styles.actions}>
-        <Pressable style={[styles.button, styles.half, styles.leave]} onPress={leaveRoom}>
-          <Text style={styles.leaveText}>방 나가기</Text>
-        </Pressable>
-        {isHost && (
-          <Pressable style={[styles.button, styles.half, styles.primary, busy && styles.disabled]} disabled={busy} onPress={startGame}>
-            <Text style={styles.primaryText}>{busy ? '길을 불러오는 중…' : '시작하기'}</Text>
-          </Pressable>
-        )}
+        <GameButton style={styles.half} label="방 나가기" color="white" size="md" onPress={leaveRoom} />
+        {isHost && <GameButton style={styles.half} label={busy ? '불러오는 중…' : '시작하기'} color="yellow" size="md" disabled={busy} onPress={startGame} />}
       </View>
     </View>
   )
@@ -117,35 +115,30 @@ const styles = StyleSheet.create({
   panel: { padding: 12, gap: 10, borderTopWidth: 1, borderTopColor: '#e5e7eb', backgroundColor: '#fff' },
   codeRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   codeBox: { flex: 1 },
-  codeLabel: { color: '#64748b', fontSize: 12, fontWeight: '700' },
-  code: { fontSize: 26, fontWeight: '900', letterSpacing: 4, color: '#0f172a' },
-  badge: { backgroundColor: '#dbeafe', color: '#1d4ed8', fontWeight: '800', fontSize: 12, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, overflow: 'hidden' },
+  codeLabel: { fontFamily: FONT.body, color: '#64748b', fontSize: 12 },
+  code: { fontFamily: FONT.body, fontSize: 26, letterSpacing: 4, color: '#0f172a' },
+  badge: { fontFamily: FONT.body, backgroundColor: '#dbeafe', color: '#1d4ed8', fontSize: 12, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, overflow: 'hidden' },
   badgeHard: { backgroundColor: '#1f2937', color: '#fca5a5' },
   shareButton: { backgroundColor: '#0f172a', borderRadius: 10, paddingHorizontal: 16, height: 40, justifyContent: 'center' },
-  shareText: { color: '#fff', fontWeight: '800' },
+  shareText: { fontFamily: FONT.body, color: '#fff' },
   seats: { gap: 8 },
-  seat: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 2, borderColor: '#e2e8f0', borderRadius: 16, paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#f8fafc' },
+  seat: { flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: BORDER, borderColor: '#e2e8f0', borderRadius: 16, paddingVertical: 8, paddingHorizontal: 12, backgroundColor: '#f8fafc' },
   seatPressed: { backgroundColor: '#e2e8f0' },
   avatar: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#e0f2fe', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarOn: { borderRadius: 12 },
   avatarEmpty: { backgroundColor: '#f1f5f9', opacity: 0.6 },
   seatBody: { flex: 1, gap: 2 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  seatName: { flexShrink: 1, fontSize: 18, fontWeight: '900', color: '#0f172a' },
-  meTag: { fontSize: 12, fontWeight: '900', color: '#fff', backgroundColor: '#0f172a', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1, overflow: 'hidden' },
-  seatSub: { fontSize: 12, color: '#64748b', fontWeight: '600' },
+  seatName: { fontFamily: FONT.body, flexShrink: 1, fontSize: 18, color: '#0f172a' },
+  meTag: { fontFamily: FONT.body, fontSize: 12, color: '#fff', backgroundColor: '#0f172a', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1, overflow: 'hidden' },
+  seatSub: { fontFamily: FONT.body, fontSize: 12, color: '#64748b' },
   empty: { color: '#94a3b8' },
   warn: { color: '#dc2626' },
   dirPill: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 12, paddingHorizontal: 12, height: 40, minWidth: 92 },
-  dirArrow: { color: '#fff', fontSize: 22, fontWeight: '900' },
-  dirLabel: { color: '#fff', fontSize: 16, fontWeight: '900' },
+  dirArrow: { fontFamily: FONT.body, color: '#fff', fontSize: 22 },
+  dirLabel: { fontFamily: FONT.body, color: '#fff', fontSize: 16 },
   error: { color: '#dc2626', textAlign: 'center' },
-  waiting: { textAlign: 'center', color: '#334155', fontWeight: '700', paddingVertical: 4 },
+  waiting: { fontFamily: FONT.body, textAlign: 'center', color: '#334155', paddingVertical: 4 },
   actions: { flexDirection: 'row', gap: 10 },
-  button: { height: 54, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   half: { flex: 1 },
-  primary: { backgroundColor: '#e11d48' },
-  primaryText: { color: '#fff', fontWeight: '900', fontSize: 18 },
-  leave: { backgroundColor: '#e2e8f0' },
-  leaveText: { color: '#334155', fontWeight: '900', fontSize: 18 },
-  disabled: { opacity: 0.4 },
 })

@@ -1,9 +1,12 @@
 import type { LatLng, NodeId, RoadCheck, Vec2 } from '@jikjwau/shared/types'
-import { ROAD_GRAPH_MARGIN_M, ROAD_GRAPH_RADIUS_M } from '@jikjwau/shared/config'
+import { JUNCTION_CLUSTER_MAX_M, JUNCTION_MERGE_M, ROAD_GRAPH_MARGIN_M, ROAD_GRAPH_RADIUS_M } from '@jikjwau/shared/config'
 import { parseTileKey, tileFlatToLocal, tilesAround, unproject } from '@jikjwau/shared/geo'
 import { HttpError } from '../../common/http-error'
 import { assertTilesReady, latLngInRegion, readRoadTile } from '../map/tile-store'
-import { buildGraphFromSegments, nearestNode, type RoadGraph } from './graph'
+import { buildGraphFromSegments, nearestNode, type MergeOptions, type RoadGraph } from './graph'
+
+/** 게임 그래프는 가까이 붙은 교차로를 합친다 */
+const GAME_MERGE: MergeOptions = { mergeM: JUNCTION_MERGE_M, maxClusterM: JUNCTION_CLUSTER_MAX_M }
 import { distance, project } from './geo'
 
 type Segment = [NodeId, NodeId, string]
@@ -38,7 +41,7 @@ export class RoadArea {
   private readonly segments: Segment[] = []
 
   private constructor(readonly origin: LatLng) {
-    this.graph = buildGraphFromSegments(this.positions, [], origin)
+    this.graph = buildGraphFromSegments(this.positions, [], origin, GAME_MERGE)
   }
 
   static async load(origin: LatLng): Promise<RoadArea> {
@@ -56,7 +59,7 @@ export class RoadArea {
     const keys = tilesAround(center, ROAD_GRAPH_RADIUS_M).filter((k) => !this.loaded.has(k))
     await readTiles(keys, this.origin, this.positions, this.segments, this.off)
     for (const k of keys) this.loaded.add(k)
-    this.graph = buildGraphFromSegments(this.positions, this.segments, this.origin)
+    this.graph = buildGraphFromSegments(this.positions, this.segments, this.origin, GAME_MERGE)
     return true
   }
 }

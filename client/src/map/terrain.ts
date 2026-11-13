@@ -41,6 +41,7 @@ export function putTerrain(key: string, n: number, heights: number[]) {
 export function dropTerrain(key: string) {
   grids.delete(key)
   masks.delete(key)
+  sandMasks.delete(key)
 }
 
 /** 격자 안 (fx, fy)는 0~1. 밖이면 가장자리로 붙인다 */
@@ -214,6 +215,99 @@ export function putWater(key: string, water: Array<[number, number[][]]>) {
   grid.min = min
 }
 
+/*
+ * 모래사장. 모래는 늘 같은 높이(SAND_LEVEL_M, 바다 수면 바로 위)의 평평한 면으로 그린다.
+ * 모래 밑과 둘레의 땅 격자 점은 모래보다 낮춰 땅이 모래·바다 위로 삐져나오지 않게 하고
+ * (땅을 끌어올리면 바다 쪽 땅 삼각형이 수면 위로 솟아 해안선이 격자 모양으로 보인다),
+ * 걸어 다니는 높이는 모래 위로 맞춘다.
+ */
+export const SAND_LEVEL_M = 0.5
+/** 모래 둘레 이 칸 수 안의 땅도 모래 밑으로 (WATER_CELLS 칸, 약 15m씩) */
+const SAND_BANK_CELLS = 2
+/** 칸마다 모래인지 */
+const sandMasks = new Map<string, Uint8Array>()
+
+export const sandLevel = (_id: number) => SAND_LEVEL_M
+
+/** 고리들(구멍 포함)이 덮는 칸을 칠한다: 줄마다 변과 만나는 x를 짝·홀로 */
+function fillCells(box: { x0: number; y0: number; w: number; h: number }, rings: number[][], M: number, paint: (cell: number) => void) {
+  const xs: number[] = []
+  for (let r = 0; r < M; r++) {
+    const yc = box.y0 + ((r + 0.5) / M) * box.h
+    xs.length = 0
+    for (const flat of rings) {
+      for (let i = 0, j = flat.length - 2; i + 1 < flat.length; j = i, i += 2) {
+        const ya = flat[i + 1]
+        const yb = flat[j + 1]
+        if (ya > yc !== yb > yc) xs.push(flat[i] + ((yc - ya) * (flat[j] - flat[i])) / (yb - ya))
+      }
+    }
+    if (xs.length < 2) continue
+    xs.sort((a, b) => a - b)
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      const c0 = Math.max(0, Math.ceil(((xs[k] - box.x0) / box.w) * M - 0.5))
+      const c1 = Math.min(M - 1, Math.floor(((xs[k + 1] - box.x0) / box.w) * M - 0.5))
+      for (let c = c0; c <= c1; c++) paint(r * M + c)
+    }
+  }
+}
+
+/** 타일 한 칸의 모래사장. putWater 다음에 부른다 */
+export function putBeaches(key: string, beaches: Array<[number, number[][]]>) {
+  const grid = grids.get(key)
+  if (!grid || beaches.length === 0) return
+  const [row, col] = key.split('_').map(Number)
+  const box = tileBox(row, col)
+  const M = WATER_CELLS
+  const mask = new Uint8Array(M * M)
+  for (const [, rings] of beaches) fillCells(box, rings, M, (cell) => (mask[cell] = 1))
+  sandMasks.set(key, mask)
+
+  const { n, h } = grid
+  const below = SAND_LEVEL_M - 0.1
+  for (let i = 0; i < n; i++) {
+    const r0 = Math.min(M - 1, Math.floor((i / (n - 1)) * M))
+    for (let j = 0; j < n; j++) {
+      const c0 = Math.min(M - 1, Math.floor((j / (n - 1)) * M))
+      let near = false
+      for (let r = Math.max(0, r0 - SAND_BANK_CELLS); r <= Math.min(M - 1, r0 + SAND_BANK_CELLS) && !near; r++) {
+        for (let c = Math.max(0, c0 - SAND_BANK_CELLS); c <= Math.min(M - 1, c0 + SAND_BANK_CELLS); c++) {
+          if (mask[r * M + c]) {
+            near = true
+            break
+          }
+        }
+      }
+      if (near) h[i * n + j] = Math.min(h[i * n + j], below)
+    }
+  }
+  let min = Infinity
+  for (let k = 0; k < h.length; k++) min = Math.min(min, h[k])
+  grid.min = min
+}
+
+/** 그 지점이 모래사장인지 */
+function onSand(x: number, y: number) {
+  const lat = origin.lat + y / mPerDegLat
+  const lng = origin.lng + x / mPerDegLng
+  const fr = lat * TILES_PER_DEG
+  const fc = lng * TILES_PER_DEG
+  const row = Math.floor(fr)
+  const col = Math.floor(fc)
+  const mask = sandMasks.get(tileKey(row, col))
+  if (!mask) return false
+  const r = Math.min(WATER_CELLS - 1, Math.floor((fr - row) * WATER_CELLS))
+  const c = Math.min(WATER_CELLS - 1, Math.floor((fc - col) * WATER_CELLS))
+  return mask[r * WATER_CELLS + c] === 1
+}
+
+/** 바다 면의 물 id (타일마다 따로). 수면은 늘 해수면(0) */
+export const seaWaterId = (row: number, col: number, k: number) => -(1e13 + (row * 100_000 + col) * 1000 + k)
+/** 바다 수면 높이: 고도 자료에 맡기지 않고 해수면으로 정해 둔다 (putWater 전에) */
+export function setSeaLevel(id: number) {
+  if (!levels.has(id)) levels.set(id, 0)
+}
+
 /** 물 id의 수면 높이 (아직 모르면 undefined) */
 export const waterLevel = (id: number) => levels.get(id)
 
@@ -239,5 +333,7 @@ export function waterAt(x: number, y: number): number {
 export function heightAt(x: number, y: number, hint?: string): number {
   const ground = terrainHeightAt(x, y, hint)
   const level = waterAt(x, y)
-  return Number.isNaN(level) ? ground : Math.max(ground, level + BRIDGE_DECK_M)
+  if (!Number.isNaN(level)) return Math.max(ground, level + BRIDGE_DECK_M)
+  // 모래사장 위는 모래 높이 (모래 밑 땅은 낮춰 두었다)
+  return onSand(x, y) ? Math.max(ground, SAND_LEVEL_M) : ground
 }

@@ -1,17 +1,21 @@
-import { memo, useEffect, useMemo, useRef } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber/native'
 import { BufferAttribute, BufferGeometry, Color, MeshLambertMaterial, type Mesh } from 'three'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import type { LatLng } from '@jikjwau/shared/types'
 import { TILES_PER_DEG } from '@jikjwau/shared/config'
-import { parseTileKey, project } from '@jikjwau/shared/geo'
+import { parseTileKey, project, tileCorner, unproject } from '@jikjwau/shared/geo'
 import { useMapTiles } from '../store/mapTiles'
 import { terrainFloor, terrainGrid } from './terrain'
+import { forEachSeaTile } from './region'
+import { WATER_COLOR } from './WaterMesh'
+import type { CameraRig } from './cameraRig'
 
 /** 높이별 땅 색 [해발 m, 색]: 평지 풀밭 → 산 숲 → 높은 산 바위 */
 const BANDS: Array<[number, Color]> = [
-  [0, new Color('#bcd9a6')],
-  [60, new Color('#acd096')],
-  [180, new Color('#86b471')],
+  [0, new Color('#aedc8c')],
+  [60, new Color('#9fd47e')],
+  [180, new Color('#7fbc63')],
   [450, new Color('#6b9a5c')],
   [900, new Color('#8f957c')],
   [1400, new Color('#b3b0a2')],
@@ -77,6 +81,75 @@ export const TerrainMesh = memo(function TerrainMesh({ tileKey, coarse = false }
   return <mesh geometry={geometry} material={material} />
 })
 
+/**
+ * 먼 땅(가벼운 타일) 여러 칸을 한 메시로. 타일마다 따로 그리면 멀리 축소했을 때 백 번 넘게 그려야 해서 끊긴다.
+ * keys가 그대로면 다시 만들지 않는다
+ */
+export const TerrainBlock = memo(function TerrainBlock({ keys }: { keys: string }) {
+  const origin = useMapTiles((s) => s.origin)
+  const geometry = useMemo(() => {
+    if (!origin) return null
+    const parts = keys.split(',').flatMap((key) => buildTerrain(key, origin, true) ?? [])
+    if (parts.length === 0) return null
+    if (parts.length === 1) return parts[0]
+    const merged = mergeGeometries(parts)
+    parts.forEach((g) => g.dispose())
+    return merged
+  }, [keys, origin])
+  useEffect(() => () => geometry?.dispose(), [geometry])
+  if (!geometry) return null
+  return <mesh geometry={geometry} material={material} />
+})
+
+/** 이만큼(m) 안의 먼 바다를 미리 칠해 둔다 */
+const FAR_SEA_RADIUS_M = 30_000
+/** 카메라가 보는 곳이 이만큼 옮겨 가면 먼 바다를 다시 만든다 */
+const FAR_SEA_REBUILD_M = 5_000
+// 멀리서는 바로 밑 풀색 바닥과 깊이가 겹쳐 깜빡일 수 있어 앞으로 당겨 그린다
+const farSeaMaterial = new MeshLambertMaterial({ color: WATER_COLOR, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 })
+
+/**
+ * 먼 바다: 타일을 받기 전에도 "칸 전체가 바다"인 곳(영역 정보)을 물색 네모로 깔아 둔다.
+ * 멀리 축소하거나 다른 곳을 보다 돌아올 때 바다가 풀색 바닥으로 보이지 않게.
+ * 받은 땅·물보다 아래에 두니, 타일이 들어오면 그 아래로 가려진다
+ */
+export function FarSea({ rig }: { rig: CameraRig }) {
+  const origin = useMapTiles((s) => s.origin)
+  const ref = useRef<Mesh>(null)
+  const [center, setCenter] = useState<{ x: number; y: number } | null>(null)
+  useFrame(() => {
+    const f = rig.focus
+    if (!center || Math.hypot(f.x - center.x, -f.z - center.y) > FAR_SEA_REBUILD_M) setCenter({ x: f.x, y: -f.z })
+    if (ref.current) ref.current.position.y = terrainFloor() - 0.5
+  })
+  const geometry = useMemo(() => {
+    if (!origin || !center) return null
+    const c = unproject(center, origin)
+    const dRow = Math.ceil((FAR_SEA_RADIUS_M / 111_000) * TILES_PER_DEG)
+    const dCol = Math.ceil((FAR_SEA_RADIUS_M / (111_000 * Math.cos((c.lat * Math.PI) / 180))) * TILES_PER_DEG)
+    const row0 = Math.floor(c.lat * TILES_PER_DEG)
+    const col0 = Math.floor(c.lng * TILES_PER_DEG)
+    const positions: number[] = []
+    forEachSeaTile(row0 - dRow, row0 + dRow, col0 - dCol, col0 + dCol, (row, col) => {
+      const a = project(tileCorner(row, col), origin)
+      const b = project(tileCorner(row + 1, col + 1), origin)
+      // 위에서 보이는 면 둘 (x 동쪽, 월드 z = -북쪽)
+      positions.push(a.x, 0, -a.y, b.x, 0, -a.y, b.x, 0, -b.y, a.x, 0, -a.y, b.x, 0, -b.y, a.x, 0, -b.y)
+    })
+    if (positions.length === 0) return null
+    const g = new BufferGeometry()
+    g.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3))
+    const normals = new Float32Array(positions.length)
+    for (let k = 1; k < normals.length; k += 3) normals[k] = 1
+    g.setAttribute('normal', new BufferAttribute(normals, 3))
+    g.computeBoundingSphere()
+    return g
+  }, [origin, center])
+  useEffect(() => () => geometry?.dispose(), [geometry])
+  if (!geometry) return null
+  return <mesh ref={ref} geometry={geometry} material={farSeaMaterial} />
+}
+
 /** 받아 둔 땅 바깥까지 깔리는 넓은 바닥. 받은 땅 중 가장 낮은 높이에 둔다 */
 export function FarGround() {
   const ref = useRef<Mesh>(null)
@@ -86,7 +159,7 @@ export function FarGround() {
   return (
     <mesh ref={ref} rotation={[-Math.PI / 2, 0, 0]}>
       <planeGeometry args={[20000, 20000]} />
-      <meshLambertMaterial color="#b9d8a8" />
+      <meshLambertMaterial color="#aedc8c" />
     </mesh>
   )
 }

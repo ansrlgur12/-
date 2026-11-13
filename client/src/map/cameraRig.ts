@@ -13,6 +13,8 @@ export interface CameraRig {
   following: boolean
   /** 저절로 도는 속도 (rad/s). 메뉴 배경에서 천천히 돌린다 */
   spin: number
+  /** 지금 화면에 보이는 회전 (yaw를 부드럽게 따라간 값). 나침반이 읽는다 */
+  viewYaw: number
 }
 
 export const CAMERA_LIMITS = {
@@ -24,7 +26,7 @@ export const CAMERA_LIMITS = {
 export const CAMERA_FOV_DEG = 45
 
 export function createCameraRig(): CameraRig {
-  return { distance: 160, yaw: 0, pitch: 0.95, focus: new Vector3(), following: true, spin: 0 }
+  return { distance: 160, yaw: 0, pitch: 0.95, focus: new Vector3(), following: true, spin: 0, viewYaw: 0 }
 }
 
 export const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))

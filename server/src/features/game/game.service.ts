@@ -1,5 +1,5 @@
 import type { GameIntro, LatLng, NormalLimit, Point, Seat, SeatController } from '@jikjwau/shared/types'
-import { ARRIVAL_RADIUS_M, DESTINATION_MAX_M, DESTINATION_MIN_M } from '@jikjwau/shared/config'
+import { ARRIVAL_RADIUS_M, DESTINATION_MIN_M } from '@jikjwau/shared/config'
 import { HttpError } from '../../common/http-error'
 import { checkSpot, RoadArea, SNAP_RADIUS_M, snapToRoad, spotProblem } from '../road/area'
 import { distance, project } from '../road/geo'
@@ -12,7 +12,6 @@ const round1 = (n: number) => Math.round(n * 10) / 10
 export function checkDistance(start: LatLng, destination: LatLng) {
   const straight = distance({ x: 0, y: 0 }, project(destination, start))
   if (straight < DESTINATION_MIN_M) throw new HttpError(400, `목적지가 출발지에서 ${DESTINATION_MIN_M}m 이상 떨어져 있어야 합니다`)
-  if (straight > DESTINATION_MAX_M) throw new HttpError(400, `목적지는 출발지에서 ${DESTINATION_MAX_M / 1000}km 안이어야 합니다`)
 }
 
 /** 출발지 주변 길을 읽고, 목적지를 길 위로 옮겨 게임을 만든다. 좌표 origin은 출발지 */

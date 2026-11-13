@@ -41,11 +41,17 @@ const ICONS = {
   eyes: require('../../assets/emoji/eyes.png'),
   uturn: require('../../assets/emoji/uturn.png'),
   vibrate: require('../../assets/emoji/vibrate.png'),
-  door: require('../../assets/emoji/door.png'),
+  gear: require('../../assets/emoji/gear.png'),
   pin: require('../../assets/emoji/pin.png'),
   search: require('../../assets/emoji/search.png'),
   finish: require('../../assets/emoji/finish.png'),
   map: require('../../assets/emoji/map.png'),
+  people: require('../../assets/emoji/people.png'),
+  bulb: require('../../assets/emoji/bulb.png'),
+  calendar: require('../../assets/emoji/calendar.png'),
+  target: require('../../assets/emoji/target.png'),
+  mountain: require('../../assets/emoji/mountain.png'),
+  gamepad: require('../../assets/emoji/gamepad.png'),
 }
 
 export type IconName = keyof typeof ICONS

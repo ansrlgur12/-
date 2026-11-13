@@ -37,6 +37,8 @@ export type GameStatus = 'setup' | 'lobby' | 'playing' | 'ended'
 export interface Plan {
   solo: boolean
   rules: RoomRules
+  /** 혼자 하기에서 내가 맡을 자리(방향). 없으면 직진(B) */
+  seat?: Seat
 }
 
 /** 지도에서 고르거나 검색한 위치 */
@@ -97,6 +99,8 @@ interface GameState {
   lastResult: RpsRoundResult | null
   /** 이번 판에서 막 도착한 시각 (도착 연출을 띄운다). 끝난 방에 다시 들어온 경우는 null */
   arrivedAt: number | null
+  /** 이번 판에서 막 실패한 시각 (시간·횟수를 다 써서 끝남. 실패 연출을 띄운다) */
+  failedAt: number | null
   /** 이번 판에 내가 낸 손 (결과가 나오면 지운다) */
   myHand: Hand | null
   /** 끝났을 때 서버 기준 플레이 시간 */
@@ -107,6 +111,8 @@ interface GameState {
   setScreen: (screen: Screen) => void
   /** 메뉴에서 혼자/멀티와 규칙을 고르고 출발·도착 고르기로 */
   openSetup: (plan: Plan) => void
+  /** 혼자 하기: 내가 맡을 방향 고르기 */
+  setSoloSeat: (seat: Seat) => void
   setNickname: (nickname: string) => void
   setPicked: (spot: Spot | null) => void
   /** 이번 판 출발지를 직접 골랐는지 (고르기 전 start는 지도 기준점일 뿐) */
@@ -202,7 +208,7 @@ export const useGame = create<GameState>((set, get) => {
     const ended = snapshot.phase === 'ARRIVED' || snapshot.phase === 'ENDED'
     const justEnded = ended && get().status === 'playing'
     if (justEnded) playEffect(snapshot.phase === 'ARRIVED' ? 'arrive' : 'end')
-    if (justEnded && snapshot.phase === 'ARRIVED') set({ arrivedAt: Date.now() })
+    if (justEnded) set(snapshot.phase === 'ARRIVED' ? { arrivedAt: Date.now() } : { failedAt: Date.now() })
     set({
       status: ended ? 'ended' : 'playing',
       snapshot,
@@ -244,6 +250,7 @@ export const useGame = create<GameState>((set, get) => {
       myHand: null,
       finalElapsedMs: undefined,
       arrivedAt: null,
+      failedAt: null,
     })
   }
 
@@ -329,6 +336,7 @@ export const useGame = create<GameState>((set, get) => {
     lastResult: null,
     myHand: null,
     arrivedAt: null,
+    failedAt: null,
 
     async init() {
       const identity = await loadIdentity()
@@ -360,6 +368,7 @@ export const useGame = create<GameState>((set, get) => {
     // 게임 준비: 출발지부터 고르는 창을 띄운다
     openSetup: (plan) => set({ plan, screen: 'game', status: 'setup', destination: null, picked: null, error: undefined, startChosen: false, placeSheet: 'start' }),
     setPlaceSheet: (placeSheet) => set({ placeSheet }),
+    setSoloSeat: (seat) => set((s) => (s.plan ? { plan: { ...s.plan, seat } } : {})),
 
     setNickname(nickname) {
       set({ nickname })
@@ -411,7 +420,12 @@ export const useGame = create<GameState>((set, get) => {
           ),
         )
         // 혼자 하기는 대기실 없이 바로 출발한다
-        if (plan.solo) await request((ack) => socket.emit('game:start', ack))
+        if (plan.solo) {
+          // 고른 방향 자리로 옮긴 다음 출발 (서버는 처음에 직진 자리에 앉힌다)
+          const seat = plan.seat
+          if (seat && seat !== 'B') await request((ack) => socket.emit('room:seat', { seat }, ack))
+          await request((ack) => socket.emit('game:start', ack))
+        }
       }),
 
     joinRoom: (code) =>

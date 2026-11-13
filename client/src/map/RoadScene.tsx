@@ -1,8 +1,8 @@
-import { memo, useCallback, useEffect, useMemo } from 'react'
+import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { Canvas } from '@react-three/fiber/native'
 import { Vector3 } from 'three'
 import type { Outfit, Point, Seat } from '@jikjwau/shared/types'
-import { project } from '@jikjwau/shared/geo'
+import { parseTileKey, project } from '@jikjwau/shared/geo'
 import { AI_OUTFIT, ARRIVAL_RADIUS_M } from '@jikjwau/shared/config'
 import { meKey } from '../store/social'
 import { Ghosts } from './Ghosts'
@@ -11,12 +11,12 @@ import { useMapTiles, type MapTile } from '../store/mapTiles'
 import { TileStreamer } from './TileStreamer'
 import { RoadMesh } from './RoadMesh'
 import { BuildingMesh } from './BuildingMesh'
-import { WaterArea, WaterwayLines } from './WaterMesh'
+import { SandAreas, WaterAreas, WaterwayLines } from './WaterMesh'
 import { HideWhenFar } from './Lod'
 import { IntersectionDots } from './IntersectionDots'
 import { StreetLights } from './StreetLights'
 import { DayNight } from './DayNight'
-import { FarGround, TerrainMesh } from './TerrainMesh'
+import { FarGround, FarSea, TerrainBlock, TerrainMesh } from './TerrainMesh'
 import { SeoulTower } from './SeoulTower'
 import { Party } from './Party'
 import { ChoiceArrows } from './ChoiceArrows'
@@ -34,6 +34,9 @@ interface Props {
   active: boolean
 }
 
+/** 먼 땅은 이만큼(타일 수) 가로·세로로 묶어 한 메시로 그린다 */
+const LITE_BLOCK = 4
+
 /** 교차로 점은 이보다 가까이 볼 때만 */
 const DOTS_MAX_CAMERA_DISTANCE_M = 600
 /** 가로등은 이보다 가까이 볼 때만 */
@@ -41,37 +44,48 @@ const LAMPS_MAX_CAMERA_DISTANCE_M = 1000
 /** 이보다 멀면 건물을 모두 숨기고 땅·도로·물만 (지도처럼) */
 const BUILDINGS_MAX_CAMERA_DISTANCE_M = 2800
 
+/** 새 타일은 한 프레임에 다 만들지 않고 땅 → 도로 → 하천·교차로 → 건물 → 가로등 순으로 한 프레임씩 */
+const TILE_STAGES = 4
+
+/** 타일 하나를 몇 단계까지 만들었는지. 한 프레임에 한 단계씩 올린다 (지도를 옮길 때 끊김을 나눈다) */
+function useStage(max: number) {
+  const [stage, setStage] = useState(0)
+  useEffect(() => {
+    if (stage >= max) return
+    const id = requestAnimationFrame(() => setStage((s) => s + 1))
+    return () => cancelAnimationFrame(id)
+  }, [stage, max])
+  return stage
+}
+
 /**
  * 타일 하나의 도로·하천·건물. 타일 객체가 그대로면 다시 만들지 않는다.
  * 건물은 detailed(화면 중심 가까운 타일)일 때만 만든다.
  */
 const TileMeshes = memo(function TileMeshes({ tile, detailed, rig }: { tile: MapTile; detailed: boolean; rig: CameraRig }) {
-  if (tile.lite) {
-    return (
-      <>
-        <TerrainMesh tileKey={tile.key} coarse />
-        {tile.waterways.length > 0 && <WaterwayLines waterways={tile.waterways} />}
-      </>
-    )
-  }
+  const stage = useStage(tile.lite ? 0 : TILE_STAGES)
+  // 먼 타일의 땅은 TerrainBlock이 묶어서 그린다. 가는 하천은 멀리서 안 보이니 뺀다
+  if (tile.lite) return null
   return (
     <>
       <TerrainMesh tileKey={tile.key} />
-      {tile.roads && (
+      {stage >= 1 && tile.roads && (
         <>
           <RoadMesh positions={tile.roads.positions} segments={tile.roads.segments} rig={rig} tileKey={tile.key} />
-          <HideWhenFar rig={rig} maxDistance={DOTS_MAX_CAMERA_DISTANCE_M}>
-            <IntersectionDots positions={tile.roads.positions} segments={tile.roads.segments} tileKey={tile.key} />
-          </HideWhenFar>
+          {stage >= 2 && (
+            <HideWhenFar rig={rig} maxDistance={DOTS_MAX_CAMERA_DISTANCE_M}>
+              <IntersectionDots positions={tile.roads.positions} segments={tile.roads.segments} tileKey={tile.key} />
+            </HideWhenFar>
+          )}
         </>
       )}
-      {tile.waterways.length > 0 && <WaterwayLines waterways={tile.waterways} />}
-      {detailed && tile.buildings.length > 0 && (
+      {stage >= 2 && tile.waterways.length > 0 && <WaterwayLines waterways={tile.waterways} />}
+      {stage >= 3 && detailed && tile.buildings.length > 0 && (
         <HideWhenFar rig={rig} maxDistance={BUILDINGS_MAX_CAMERA_DISTANCE_M}>
           <BuildingMesh buildings={tile.buildings} tileKey={tile.key} />
         </HideWhenFar>
       )}
-      {detailed && tile.roads && (
+      {stage >= 4 && detailed && tile.roads && (
         <HideWhenFar rig={rig} maxDistance={LAMPS_MAX_CAMERA_DISTANCE_M}>
           <StreetLights positions={tile.roads.positions} segments={tile.roads.segments} tileKey={tile.key} />
         </HideWhenFar>
@@ -85,6 +99,7 @@ export function RoadScene({ rig, picker, active }: Props) {
   const detail = useMapTiles((s) => s.detail)
   const status = useGame((s) => s.status)
   const startChosen = useGame((s) => s.startChosen)
+  const origin = useMapTiles((s) => s.origin)
   const mySeat = useMySeat()
   const snapshot = useGame((s) => s.snapshot)
   const game = useGame((s) => s.game)
@@ -109,11 +124,32 @@ export function RoadScene({ rig, picker, active }: Props) {
     if (status === 'setup' || status === 'lobby') partyPosition.set(0, 0, 0)
   }, [status, start, partyPosition])
 
+  // 먼 타일 땅은 4×4 타일씩 묶는다 (그리는 횟수 줄이기)
+  const liteBlocks = useMemo(() => {
+    const blocks = new Map<string, string[]>()
+    for (const tile of tiles.values()) {
+      if (!tile.lite) continue
+      const [row, col] = parseTileKey(tile.key)
+      const block = `${Math.floor(row / LITE_BLOCK)}_${Math.floor(col / LITE_BLOCK)}`
+      const keys = blocks.get(block) ?? []
+      keys.push(tile.key)
+      blocks.set(block, keys)
+    }
+    return [...blocks].map(([block, keys]) => [block, keys.sort().join(',')] as const)
+  }, [tiles])
+
   // 호수·강은 여러 타일에 같은 것이 들어 있으니 id로 한 번만 그린다
   const water = useMemo(() => {
     const unique = new Map<number, number[][]>()
     for (const tile of tiles.values()) {
       for (const [id, rings] of tile.water) if (!unique.has(id)) unique.set(id, rings)
+    }
+    return [...unique]
+  }, [tiles])
+  const beaches = useMemo(() => {
+    const unique = new Map<number, number[][]>()
+    for (const tile of tiles.values()) {
+      for (const [id, rings] of tile.beaches) if (!unique.has(id)) unique.set(id, rings)
     }
     return [...unique]
   }, [tiles])
@@ -138,12 +174,15 @@ export function RoadScene({ rig, picker, active }: Props) {
     <Canvas style={{ flex: 1 }} frameloop={active ? 'always' : 'never'} gl={{ antialias: false }} camera={{ position: [0, 200, 150], fov: CAMERA_FOV_DEG, near: 2, far: 24000 }}>
       <DayNight />
       <FarGround />
+      <FarSea rig={rig} />
       <HideWhenFar rig={rig} maxDistance={BUILDINGS_MAX_CAMERA_DISTANCE_M}>
         <SeoulTower />
       </HideWhenFar>
 
-      {water.map(([id, rings]) => (
-        <WaterArea key={id} id={id} rings={rings} />
+      <WaterAreas water={water} origin={origin} />
+      <SandAreas beaches={beaches} origin={origin} />
+      {liteBlocks.map(([block, keys]) => (
+        <TerrainBlock key={block} keys={keys} />
       ))}
       {[...tiles.values()].map((tile) => (
         <TileMeshes key={tile.key} tile={tile} detailed={detail.has(tile.key)} rig={rig} />

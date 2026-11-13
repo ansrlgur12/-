@@ -8,9 +8,9 @@ import { heightAt } from './terrain'
 export type RoadClass = 'major' | 'minor' | 'path'
 
 export const ROAD_STYLE: Record<RoadClass, { width: number; color: string; height: number }> = {
-  major: { width: 10, color: '#f4f1ea', height: 0.03 },
+  major: { width: 10, color: '#fde8a8', height: 0.03 },
   minor: { width: 5, color: '#ffffff', height: 0.02 },
-  path: { width: 2.5, color: '#d9cdb8', height: 0.01 },
+  path: { width: 2.5, color: '#e6c58f', height: 0.01 },
 }
 
 /** 땅 위로 띄우는 높이. 땅 메시(약 30m 격자)와 도로를 나누는 간격이 달라 생기는 틈을 덮는다 */
@@ -32,7 +32,7 @@ const MINOR_MAX_CAMERA_DISTANCE_M = 2200
 /** 골목길·산책로는 이보다 가까이 볼 때만 (멀리서는 큰길과 일반 도로만) */
 const PATH_MAX_CAMERA_DISTANCE_M = 1500
 
-const MAJOR = new Set(['primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link'])
+const MAJOR = new Set(['motorway', 'motorway_link', 'trunk', 'trunk_link', 'primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link'])
 const PATH = new Set(['footway', 'path', 'pedestrian', 'steps', 'cycleway', 'track', 'bridleway'])
 
 export function classify(highway: string): RoadClass {

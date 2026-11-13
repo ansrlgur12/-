@@ -4,6 +4,7 @@ import { EMOTE_SHOW_MS } from '@jikjwau/shared/config'
 import { toScreen, type ScenePicker } from '../map/scenePicker'
 import { emoteAnchors, useSocial, type Bubble } from '../store/social'
 import { EmojiIcon } from './Icon'
+import { FONT } from './theme'
 
 const SIZE = 52
 
@@ -70,5 +71,5 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
   },
   ghost: { backgroundColor: 'rgba(255,255,255,0.75)' },
-  emoji: { fontSize: 30 },
+  emoji: { fontFamily: FONT.body, fontSize: 30 },
 })
