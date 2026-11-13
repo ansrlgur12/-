@@ -108,13 +108,6 @@ export const RPS_RESULT_SHOW_MS = RPS_CHANT_MS + 2600
 export const DESTINATION_MIN_M = 100
 export const DESTINATION_WARN_M = 2000
 
-/**
- * 게임 길 그래프에서 이보다 가깝게(길을 따라) 붙어 있는 교차로들은 하나로 합친다.
- * 큰길(왕복 차로가 따로 그려짐)이 만나는 곳처럼 좁은 곳에 갈림길이 몰려 가위바위보가 연달아 나오지 않게
- */
-export const JUNCTION_MERGE_M = 25
-/** 합친 교차로 한 덩어리의 최대 크기 (골목이 촘촘한 동네가 통째로 한 점이 되지 않게) */
-export const JUNCTION_CLUSTER_MAX_M = 40
 
 /** 일반 모드에서 고를 수 있는 제한 */
 export const NORMAL_TIME_LIMITS_MIN = [10, 20, 30]

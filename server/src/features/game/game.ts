@@ -14,7 +14,7 @@ import type {
 } from '@jikjwau/shared/types'
 import { moveDurationMs, RPS_RESULT_SHOW_MS, RPS_TIMEOUT_MS, SEAT_DIRECTION } from '@jikjwau/shared/config'
 import { HttpError } from '../../common/http-error'
-import { canonicalNode, type RoadGraph } from '../road/graph'
+import type { RoadGraph } from '../road/graph'
 import { distance } from '../road/geo'
 import { arrivalAt, walkToDecision } from '../road/walk'
 import { judgeRound, randomHand } from './rps'
@@ -114,31 +114,6 @@ export class Game {
 
   private pos(id: NodeId): Vec2 {
     return this.graph.nodes.get(id)!
-  }
-
-  /**
-   * 타일을 더 읽어 그래프를 다시 만들면 가까운 교차로 묶음이 달라져 노드가 합쳐질 수 있다.
-   * 지금 선 곳을 새 그래프의 노드로 옮기고, 가려던 방향(via)도 새 그래프의 이웃으로 맞춘다
-   */
-  private settle(via: NodeId): NodeId {
-    this.node = canonicalNode(this.graph, this.node)
-    const around = this.graph.adj.get(this.node)!
-    const next = canonicalNode(this.graph, via)
-    if (around.has(next)) return next
-    // 가려던 노드가 사라졌거나 지금 선 곳과 합쳐졌다: 그 위치에 가장 가까운 이웃으로
-    const target = this.graph.nodes.get(via)
-    let best = [...around][0]
-    let bestDist = Infinity
-    if (target) {
-      for (const n of around) {
-        const d = distance(this.pos(n), target)
-        if (d < bestDist) {
-          bestDist = d
-          best = n
-        }
-      }
-    }
-    return best
   }
 
   /** 도착 원에 들어선 지점 (길 중간일 수 있다). 도착하기 전에는 null */
@@ -304,11 +279,9 @@ export class Game {
 
     for (let i = 0; i < MAX_AUTO_MOVES; i++) {
       await this.opts.source.ensureAround(this.pos(this.node))
-      via = this.settle(via)
       let path = walkToDecision(this.graph, this.node, via)
       // 아주 긴 외길 끝이 읽어 둔 범위 밖이었다면 넓힌 그래프로 다시 따라간다
       if (await this.opts.source.ensureAround(this.pos(path[path.length - 1]))) {
-        via = this.settle(via)
         path = walkToDecision(this.graph, this.node, via)
       }
 
